@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || '/api';
+const BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 const KEY = 'dr_token';
 
 export const getToken = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
