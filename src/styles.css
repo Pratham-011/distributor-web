@@ -160,7 +160,17 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 tbody tr:hover td { background: #fafbfc; }
 tfoot td { font-weight: 700; border-top: 2px solid var(--line-strong); border-bottom: 0; }
 td .sub { display: block; color: var(--muted); font-size: 12.5px; }
-.table-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.table-tools { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; }
+
+/* Long tables scroll inside a box of about 12 rows; the header row sticks to the top and the total row to the bottom */
+:root { --scroll-box: 520px; }
+.table-wrap.scroll, .split.scroll { max-height: var(--scroll-box); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.table-wrap.scroll:focus-visible, .split.scroll:focus-visible { outline: 3px solid #9cc0f5; outline-offset: 2px; }
+.table-wrap.scroll thead th { position: sticky; top: 0; z-index: 2; box-shadow: inset 0 -1px 0 var(--line-strong); }
+.table-wrap.scroll tfoot td { position: sticky; bottom: 0; z-index: 2; background: #fff; box-shadow: inset 0 2px 0 var(--line-strong); }
+.split.scroll .split-head { position: sticky; top: 0; z-index: 2; }
+.split.scroll .split-foot { position: sticky; bottom: 0; z-index: 2; background: #fff; }
+.split.scroll .split-detail { position: relative; z-index: 0; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* List tables (DataTable stack) turn into cards — "Label  value" per line — when their box gets narrow.
@@ -356,7 +366,7 @@ button.split-row:focus-visible { outline: 3px solid #9cc0f5; outline-offset: -3p
   .nav a { padding: 10px; }
 }
 @media (max-width: 600px) {
-  :root { --ctl: 42px; --ctl-sm: 34px; --ctl-lg: 46px; }
+  :root { --ctl: 42px; --ctl-sm: 34px; --ctl-lg: 46px; --scroll-box: 70vh; }
   body { font-size: 14.5px; }
   h1 { font-size: 20px; }
   /* 16px stops iPhones zooming in when a field is tapped */
@@ -433,8 +443,9 @@ button.split-row:focus-visible { outline: 3px solid #9cc0f5; outline-offset: -3p
   .kpi .label { font-size: 8.5pt; } .kpi .value { font-size: 14pt; } .kpi .sub { font-size: 8pt; }
   .notice { padding: 6px 10px; font-size: 9pt; break-inside: avoid; }
 
-  /* tables: full width, header row repeated on every page, rows never split */
-  .table-wrap { overflow: visible; margin: 0; padding: 0; }
+  /* tables: full width, every row (no scroll boxes), header row repeated on every page, rows never split */
+  .table-wrap, .table-wrap.scroll, .split.scroll { overflow: visible; max-height: none; margin: 0; padding: 0; }
+  .table-wrap.scroll thead th, .table-wrap.scroll tfoot td, .split.scroll .split-head, .split.scroll .split-foot { position: static; box-shadow: none; }
   table { font-size: 9pt; }
   th, td { padding: 4px 6px; }
   th { background: #f1f3f5; }

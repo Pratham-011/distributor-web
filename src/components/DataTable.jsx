@@ -6,8 +6,10 @@ import { Icon } from './Icons.jsx';
  * Sorting by clicking a column; "Download Excel" exports exactly what is shown.
  * stack: when the table's box is narrow, each row becomes a small card (label: value) instead of a
  * sideways-scrolling table. stack="wide" switches earlier, for tables with many columns.
+ * scroll: long tables get a fixed height and scroll inside (turn off for a table that is already inside a scrolling box).
  */
-export default function DataTable({ cols, rows, footer, fileName = 'report', empty = 'Nothing to show for these dates.', exportable = true, stack = false }) {
+const SCROLL_AFTER = 10;   // rows; about what fits the box height in styles.css (--scroll-box)
+export default function DataTable({ cols, rows, footer, fileName = 'report', empty = 'Nothing to show for these dates.', exportable = true, stack = false, scroll = true }) {
   const [sort, setSort] = useState(null);
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -33,9 +35,11 @@ export default function DataTable({ cols, rows, footer, fileName = 'report', emp
   }
 
   if (!rows.length) return <p className="muted">{empty}</p>;
+  const long = scroll && rows.length > SCROLL_AFTER;
   return (
     <>
-      <div className="table-wrap">
+      {/* long tables scroll inside their own box (header and total row stay in view); printing shows every row */}
+      <div className={'table-wrap' + (scroll ? ' scroll' : '')} {...(long ? { tabIndex: 0, role: 'region', 'aria-label': `${fileName}, ${rows.length} rows, scrolls` } : {})}>
         <table className={stack ? 'stack' + (stack === 'wide' ? ' wide' : '') : undefined}>
           <thead>
             <tr>
@@ -63,9 +67,10 @@ export default function DataTable({ cols, rows, footer, fileName = 'report', emp
           )}
         </table>
       </div>
-      {exportable && (
-        <div className="table-tools no-print" style={{ marginTop: 12 }}>
-          <button className="btn small" onClick={exportExcel}>{Icon.download} Download Excel</button>
+      {(exportable || long) && (
+        <div className="table-tools no-print" style={{ marginTop: 10 }}>
+          {exportable && <button className="btn small" onClick={exportExcel}>{Icon.download} Download Excel</button>}
+          {long && <span className="small muted">{rows.length.toLocaleString('en-IN')} rows · scroll the table to see all</span>}
         </div>
       )}
     </>

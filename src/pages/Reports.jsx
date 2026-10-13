@@ -258,7 +258,7 @@ function SplitList({ title, desc, by, rows, fileName }) {
   if (!rows.length) return null;
   return (
     <Card title={title} desc={desc} actions={<ModeKey />}>
-      <div className="split">
+      <div className="split scroll" {...(rows.length > 8 ? { tabIndex: 0, role: 'region', 'aria-label': `${title}, scrolls` } : {})}>
         <div className="split-head" aria-hidden="true">
           <span>{by === 'person' ? 'Name' : 'Shop'}</span>{MODES.map(([k, l]) => <span key={k} className="m-col">{l}</span>)}<span className="m-col">Total</span><span />
         </div>
@@ -296,8 +296,9 @@ function SplitList({ title, desc, by, rows, fileName }) {
           <span />
         </div>
       </div>
-      <div className="table-tools no-print" style={{ marginTop: 12 }}>
+      <div className="table-tools no-print" style={{ marginTop: 10 }}>
         <button className="btn small" onClick={exportExcel}>{Icon.download} Download Excel</button>
+        {rows.length > 8 && <span className="small muted">{num(rows.length)} {by === 'person' ? 'people' : 'shops'} · scroll to see all, click one to open</span>}
       </div>
       {tip}
     </Card>
@@ -332,7 +333,7 @@ function SplitDetail({ by, k, name }) {
         return (
           <div key={mk} className="mode-group">
             <h4><i className={'sw m-' + mk} />{label}<span className="muted"> · {num(list.length)} receipt{list.length === 1 ? '' : 's'} · </span>{inr(total)}</h4>
-            <DataTable stack fileName={`${name} ${label}`} rows={list} exportable={false}
+            <DataTable stack scroll={false} fileName={`${name} ${label}`} rows={list} exportable={false}
               cols={[{ key: 'v_no', label: 'Receipt', render: (v, x) => <>{v}<span className="sub">{date(x.date)}</span></> }, other,
                 ...details, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
           </div>
