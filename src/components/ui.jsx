@@ -1,6 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
-import { short, inr } from '../format.js';
+import { short, inr, dateTime } from '../format.js';
 import { Icon } from './Icons.jsx';
+import { useAuth } from '../auth.jsx';
+import { STATE_NAME } from '../states.jsx';
+
+/** Letterhead for printed reports: hidden on screen, at the top of the first printed page. */
+export function PrintHeader({ title, sub, period }) {
+  const { user } = useAuth();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const stamp = () => setNow(new Date());
+    window.addEventListener('beforeprint', stamp);
+    return () => window.removeEventListener('beforeprint', stamp);
+  }, []);
+  return (
+    <header className="print-head">
+      <div className="ph-top">
+        <div>
+          <div className="ph-org">{user.org_name}</div>
+          {user.state_code && <div className="ph-meta">{STATE_NAME[user.state_code]} · GST state code {user.state_code}</div>}
+        </div>
+        <div className="ph-right">
+          <div className="ph-title">{title}</div>
+          {period && <div className="ph-period">{period}</div>}
+        </div>
+      </div>
+      <div className="ph-sub"><span>{sub}</span><span>Printed {dateTime(now)} by {user.name}</span></div>
+    </header>
+  );
+}
+
+/** Opens the print dialog with a file name that says what it is (used when saving as PDF). */
+export function printReport(name) {
+  const old = document.title;
+  document.title = name.replace(/[\\/:*?"<>|]+/g, '-');
+  window.print();
+  document.title = old;
+}
 
 /** Password input with a button to show or hide what was typed. */
 export function PasswordInput(props) {
@@ -47,6 +83,29 @@ export function Notice({ tone = 'info', children }) {
 
 export const Badge = ({ tone = 'grey', children }) => <span className={'badge ' + tone}>{children}</span>;
 export const Loading = ({ text = 'Loading…' }) => <div className="loading"><span className="spinner" />{text}</div>;
+/** Grey placeholder shaped like a report (KPI tiles + cards), shown while new dates load. */
+export function ReportSkeleton({ kpis = 4, cards = 2, rows = 5 }) {
+  const widths = [92, 76, 84, 64, 72, 88, 58];
+  return (
+    <div className="skeleton" aria-busy="true" role="status">
+      <span className="visually-hidden">Loading the report…</span>
+      <div className="kpis">
+        {Array.from({ length: kpis }, (_, i) => (
+          <div className="kpi" key={i}><span className="sk sk-line" style={{ width: '55%' }} /><span className="sk sk-num" /><span className="sk sk-line" style={{ width: '72%' }} /></div>
+        ))}
+      </div>
+      <div className="grid two">
+        {Array.from({ length: cards }, (_, i) => (
+          <div className="card" key={i}>
+            <span className="sk sk-title" />
+            {Array.from({ length: rows }, (_, k) => <span key={k} className="sk sk-row" style={{ width: widths[(k + i) % widths.length] + '%' }} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Empty({ title, children }) {
   return <div className="empty"><h3>{title}</h3>{children}</div>;
 }

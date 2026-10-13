@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import DateBar, { useDates } from '../components/DateBar.jsx';
 import useReport from '../components/useReport.js';
-import { Kpi, Card, Notice, Loading, Bars, Columns, Badge } from '../components/ui.jsx';
+import { Kpi, Card, Notice, Bars, Columns, Badge, ReportSkeleton } from '../components/ui.jsx';
 import { useAuth, can } from '../auth.jsx';
 import { short, inr, num, pct, date, dateShort, rupees } from '../format.js';
 
@@ -28,7 +28,7 @@ export default function Home() {
           <DateBar />
           {range && dates && <UploadedFor range={range} dates={dates} />}
           {error && <Notice tone="bad">{error}</Notice>}
-          {loading && !d ? <Loading /> : d && <Body d={d} />}
+          {loading ? <ReportSkeleton /> : d && <Body d={d} />}
         </>
       )}
     </>

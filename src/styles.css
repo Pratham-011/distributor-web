@@ -281,6 +281,62 @@ table.stack td .cell { min-width: 0; overflow-wrap: anywhere; }
 .form-row .field { flex: 1 1 220px; max-width: 360px; margin-bottom: 0; }
 .form-row > .btn { flex: none; min-width: 120px; }
 
+/* ---------- Cash / Cheque / Online split (Money received) ---------- */
+:root { --m-cash: #2a78d6; --m-cheque: #eb6834; --m-online: #1baf7a; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.m-cash { background: var(--m-cash); } .m-cheque { background: var(--m-cheque); } .m-online { background: var(--m-online); }
+.mode-key { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
+.split { container-type: inline-size; }
+.split-head, .split-row {
+  display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.1fr) 16px;
+  grid-template-areas: "name cash cheque online total chev"; gap: 6px 12px; align-items: center;
+}
+.split-head { font-size: 12.5px; font-weight: 600; color: var(--text-2); padding: 8px 6px; background: #fafbfc; border-bottom: 1px solid var(--line); }
+.split-head .m-col { text-align: right; background: none; }
+.split-head > :first-child { grid-area: name; } .split-head > :last-child { grid-area: chev; }
+.split-head > :nth-child(2) { grid-area: cash; } .split-head > :nth-child(3) { grid-area: cheque; }
+.split-head > :nth-child(4) { grid-area: online; } .split-head > :nth-child(5) { grid-area: total; }
+.split-row { width: 100%; padding: 10px 6px; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.split-row:hover { background: #f7f9fc; }
+button.split-row:focus-visible { outline: 3px solid #9cc0f5; outline-offset: -3px; }
+.split-item.open > .split-row { background: var(--primary-soft); }
+.split-name { grid-area: name; min-width: 0; }
+.split-name b { display: block; overflow-wrap: anywhere; }
+.split-name .sub { display: block; color: var(--muted); font-size: 12.5px; }
+.split-bar { display: flex; gap: 2px; height: 6px; margin-top: 6px; max-width: 260px; }
+.split-bar .seg { min-width: 3px; border-radius: 2px; }
+.split-bar .seg:first-child { border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.split-bar .seg:last-child { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+.split-amt { text-align: right; font-size: 14px; white-space: nowrap; }
+.split-amt small { display: block; color: var(--muted); font-size: 12px; }
+.a-cash { grid-area: cash; } .a-cheque { grid-area: cheque; } .a-online { grid-area: online; } .a-total { grid-area: total; }
+.chev { grid-area: chev; color: var(--muted); font-size: 18px; transition: transform .15s; }
+.split-item.open .chev { transform: rotate(90deg); }
+.split-foot { cursor: default; font-weight: 600; border-bottom: 0; border-top: 2px solid var(--line-strong); }
+.split-detail { padding: 12px 10px 16px; background: #fbfcfe; border-bottom: 1px solid var(--line); }
+.mode-group + .mode-group { margin-top: 14px; }
+.mode-group h4 { margin: 0 0 6px; font-size: 14px; }
+.mode-group .table-wrap { margin: 0; padding: 0; }
+/* narrow (phones, small cards): name + total on top, the three amounts below with their labels */
+@container (max-width: 620px) {
+  .split-head { display: none; }
+  .split-row { grid-template-columns: repeat(3, minmax(0, 1fr)) 16px; grid-template-areas: "name name total chev" "cash cheque online ."; }
+  .split-amt { text-align: left; font-size: 13px; }
+  .split-amt.a-total { text-align: right; font-size: 14px; }
+  .split-amt:not(.a-total)::before { content: attr(data-label); display: block; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+  .split-bar { max-width: none; }
+}
+
+/* ---------- loading skeleton ---------- */
+.sk { display: block; border-radius: 6px; background: linear-gradient(90deg, #eceef1 25%, #f5f6f8 40%, #eceef1 60%); background-size: 300% 100%; animation: sk 1.4s ease-in-out infinite; }
+.sk-line { height: 11px; margin: 4px 0; }
+.sk-num { height: 24px; width: 62%; margin: 9px 0 8px; }
+.sk-title { height: 15px; width: 38%; margin: 2px 0 16px; }
+.sk-row { height: 13px; margin: 13px 0; }
+@keyframes sk { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 .empty { text-align: center; padding: 32px 16px; color: var(--text-2); }
 .empty h3 { font-size: 16px; margin-bottom: 4px; color: var(--text); }
 .spinner { width: 22px; height: 22px; border: 3px solid #dbe4f0; border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
@@ -341,9 +397,56 @@ table.stack td .cell { min-width: 0; overflow-wrap: anywhere; }
   .page-head .btn.big { width: 100%; }
   .notice { padding: 10px 12px; font-size: 14px; }
 }
+/* ---------- printing (Print button / Ctrl+P on a report) ---------- */
+.print-head { display: none; }
+@page {
+  size: A4;
+  margin: 12mm 10mm 14mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8.5pt Inter, system-ui, sans-serif; color: #6c737d; }
+}
 @media print {
-  .side, .topbar, .datebar, .no-print { display: none !important; }
-  .app { display: block; } .content { padding: 0; max-width: none; }
-  body { background: #fff; font-size: 12px; }
-  .card, .kpi { box-shadow: none; break-inside: avoid; }
+  /* keep bar colours, badges and swatches (browsers drop background colours by default) */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { background: #fff; }
+  body { font-size: 10.5pt; line-height: 1.4; }
+  .side, .topbar, .scrim, .datebar, .no-print, .page-head, .tip, .chev, th .arrow, .skeleton { display: none !important; }
+  .app { display: block; } .main { display: block; }
+  .content { padding: 0; max-width: none; }
+
+  .print-head { display: block; border-bottom: 2px solid var(--text); padding-bottom: 6px; margin-bottom: 12px; }
+  .ph-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .ph-org { font-size: 17pt; font-weight: 700; line-height: 1.15; }
+  .ph-meta { font-size: 8.5pt; color: var(--text-2); margin-top: 2px; }
+  .ph-right { text-align: right; }
+  .ph-title { font-size: 13pt; font-weight: 700; }
+  .ph-period { font-size: 10pt; font-weight: 600; }
+  .ph-sub { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; font-size: 8.5pt; color: var(--text-2); }
+
+  h2 { font-size: 11.5pt; }
+  .grid.two { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .card { box-shadow: none; border-color: #d5d9de; padding: 10px 12px; break-inside: auto; }
+  .card + .card, .grid + .card { margin-top: 10px; }
+  .card .card-head { margin-bottom: 6px; break-after: avoid; }
+  .card .card-head p { font-size: 8.5pt; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .kpi { box-shadow: none; border-color: #d5d9de; padding: 8px 10px; break-inside: avoid; }
+  .kpi .label { font-size: 8.5pt; } .kpi .value { font-size: 14pt; } .kpi .sub { font-size: 8pt; }
+  .notice { padding: 6px 10px; font-size: 9pt; break-inside: avoid; }
+
+  /* tables: full width, header row repeated on every page, rows never split */
+  .table-wrap { overflow: visible; margin: 0; padding: 0; }
+  table { font-size: 9pt; }
+  th, td { padding: 4px 6px; }
+  th { background: #f1f3f5; }
+  thead { display: table-header-group; }
+  tr, .split-row, .bar-row { break-inside: avoid; }
+  .split-head, .mode-group h4 { break-after: avoid; }
+  tbody tr:hover td, button.split-row:hover, .split-item.open > .split-row { background: none; }
+  td .sub, .split-name .sub, .split-amt small { font-size: 8pt; }
+
+  .cols { height: 140px; }
+  .split-row, .split-head { padding: 5px 4px; }
+  .split-amt { font-size: 9pt; }
+  .split-detail { padding: 6px 4px 8px; background: none; }
+  a { color: inherit; text-decoration: none; }
 }

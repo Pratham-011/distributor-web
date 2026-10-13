@@ -18,8 +18,9 @@ function Need({ min, children }) {
 }
 
 function App() {
-  const { user, ready } = useAuth();
-  if (!ready) return <Loading />;
+  const { user, ready, offline } = useAuth();
+  // a free Render server can take about a minute to wake up; say so instead of spinning silently
+  if (!ready) return <Loading text={offline ? 'Cannot reach the server yet. If it was asleep it takes up to a minute to start. Trying again…' : 'Loading…'} />;
   if (!user) return (
     <Routes>
       <Route path="/register" element={<Register />} />

@@ -14,6 +14,7 @@ export const can = (user, min) => !!user && ROLES.indexOf(user.role) >= ROLES.in
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [offline, setOffline] = useState(false);   // the saved login is being checked but the server can't be reached
 
   const logout = useCallback(() => { setToken(null); setUser(null); }, []);
   useEffect(() => { setUnauthorizedHandler(logout); }, [logout]);
@@ -23,11 +24,11 @@ export function AuthProvider({ children }) {
     if (!getToken()) { setReady(true); return; }
     let stop = false, timer;
     const check = () => api('/auth/me')
-      .then(r => { if (stop) return; setToken(r.token); setUser(r.user); setReady(true); })
+      .then(r => { if (stop) return; setToken(r.token); setUser(r.user); setOffline(false); setReady(true); })
       .catch(e => {
         if (stop) return;
         if (e.status === 401 || e.status === 403) { setToken(null); setReady(true); }
-        else timer = setTimeout(check, 3000);
+        else { setOffline(true); timer = setTimeout(check, 3000); }
       });
     check();
     return () => { stop = true; clearTimeout(timer); };
@@ -36,7 +37,7 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(({ token, user }) => { setToken(token); setUser(user); }, []);
   // the Log out button: tell the server first so it shows in the activity log
   const signOut = useCallback(() => api('/auth/logout', { method: 'POST' }).catch(() => {}).finally(logout), [logout]);
-  const value = useMemo(() => ({ user, ready, signIn, logout, signOut, setUser }), [user, ready, signIn, logout, signOut]);
+  const value = useMemo(() => ({ user, ready, offline, signIn, logout, signOut, setUser }), [user, ready, offline, signIn, logout, signOut]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

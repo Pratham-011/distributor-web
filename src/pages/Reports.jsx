@@ -2,29 +2,38 @@ import { useState } from 'react';
 import DateBar, { useDates } from '../components/DateBar.jsx';
 import useReport from '../components/useReport.js';
 import DataTable from '../components/DataTable.jsx';
-import { Kpi, Card, Notice, Loading, Bars, Columns, Empty } from '../components/ui.jsx';
+import { Kpi, Card, Notice, Bars, Columns, Empty, ReportSkeleton, useTip, PrintHeader, printReport } from '../components/ui.jsx';
+import { useAuth } from '../auth.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { api } from '../api.js';
 import { useDebounced } from '../components/ui.jsx';
 import { AGE_SHADES } from './Home.jsx';
-import { short, inr, num, pct, date, dateShort, rupees, titleCase } from '../format.js';
+import { short, inr, num, pct, date, dateShort, rupees, titleCase, rangeLabel } from '../format.js';
 import { useEffect } from 'react';
 
 const money = v => inr(v);
-const Head = ({ title, sub }) => (
-  <div className="page-head">
-    <div className="grow"><h1>{title}</h1>{sub && <p className="muted">{sub}</p>}</div>
-    <button className="btn no-print" onClick={() => window.print()}>{Icon.print} Print</button>
-  </div>
-);
-function Frame({ title, sub, name, children, hint }) {
-  const r = useReport(name);
+function Head({ title, sub, period }) {
+  const { user } = useAuth();
   return (
     <>
-      <Head title={title} sub={sub} />
+      <PrintHeader title={title} sub={sub} period={period} />
+      <div className="page-head">
+        <div className="grow"><h1>{title}</h1>{sub && <p className="muted">{sub}</p>}</div>
+        <button className="btn no-print" onClick={() => printReport(`${title} - ${user.org_name}${period ? ' - ' + period : ''}`)}>{Icon.print} Print</button>
+      </div>
+    </>
+  );
+}
+function Frame({ title, sub, name, children, hint }) {
+  const r = useReport(name);
+  const { range } = useDates();
+  return (
+    <>
+      <Head title={title} sub={sub} period={range && rangeLabel(range.from, range.to)} />
       <DateBar hint={hint} />
       {r.error && <Notice tone="bad">{r.error}</Notice>}
-      {r.loading && !r.data ? <Loading /> : r.data && children(r.data)}
+      {/* new dates: placeholder first, so old numbers are never shown under new dates */}
+      {r.loading ? <ReportSkeleton /> : r.data && children(r.data)}
     </>
   );
 }
@@ -55,7 +64,7 @@ export function Sales() {
           {d.daily.length > 1 && <Card title="Day by day" desc="Sales before GST">
             <Columns items={d.daily.map(x => ({ ...x, label: dateShort(x.date) }))} value="taxable" label="label" tipText={i => `${date(i.date)}: ${inr(i.taxable)} · ${i.invoices} bills`} /></Card>}
           <div className="grid two" style={{ marginTop: d.daily.length > 1 ? 16 : 0 }}>
-            <Card title="Brand-wise sales" desc="Click a column name to sort">
+            <Card title="Brand-wise sales" desc={<span className="no-print">Click a column name to sort</span>}>
               <DataTable fileName="Brand-wise sales" rows={d.brands} footer={{ name: 'Total', qty: d.totals.qty, taxable: d.totals.taxable }}
                 cols={[{ key: 'name', label: 'Brand' }, { key: 'qty', label: 'Units', num: 1, render: num },
                   { key: 'taxable', label: 'Sales', num: 1, render: money }, { key: 'share', label: 'Share', num: 1, render: (_, r) => r.name === 'Total' ? '100%' : pct(r.taxable, d.totals.taxable), excel: r => pct(r.taxable, d.totals.taxable) }]} />
@@ -210,16 +219,11 @@ export function Collections() {
             <Kpi tone="blue" label="Total received" value={inr(d.totals.total)} sub={`${num(d.totals.n)} receipts`} />
             {d.modes.map(m => <Kpi key={m.name} label={m.name} value={rupees(m.amount)} sub={`${num(m.n)} receipts · ${pct(m.amount, d.totals.total)}`} />)}
           </div>
-          <div className="grid two">
-            <Card title="Collected by" desc="“Office counter” means paid at the office">
-              <Bars items={d.people} value="amount" fmt={rupees} tipText={i => `${i.name}: ${inr(i.amount)} · ${i.n} receipts`} />
-            </Card>
-            <Card title="Shops that paid the most">
-              <DataTable fileName="Top paying shops" rows={d.parties} cols={[{ key: 'name', label: 'Shop' }, { key: 'n', label: 'Receipts', num: 1 }, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
-            </Card>
-          </div>
+          <SplitList title="Collected by" desc={<>“Office counter” means paid at the office.<span className="no-print"> Click a name to see each receipt.</span></>} by="person"
+            rows={d.people} fileName="Collected by" />
+          <SplitList title="Shops that paid the most" desc={<span className="no-print">Click a shop to see each receipt.</span>} by="party" rows={d.parties} fileName="Shops that paid" />
           <Card title="Cheques" desc="Cheques received, with bank and cheque date">
-            <DataTable fileName="Cheques" rows={d.cheques} footer={{ v_no: 'Total', amount: d.cheque_total }} empty="No cheques for these dates."
+            <DataTable stack fileName="Cheques" rows={d.cheques} footer={{ v_no: 'Total', amount: d.cheque_total }} empty="No cheques for these dates."
               cols={[{ key: 'v_no', label: 'Receipt' }, { key: 'party_name', label: 'Shop' }, { key: 'bank', label: 'Bank', render: titleCase },
                 { key: 'cheque_no', label: 'Cheque no.' }, { key: 'cheque_date', label: 'Cheque date', render: date }, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
           </Card>
@@ -229,6 +233,112 @@ export function Collections() {
         </>
       )}
     </Frame>
+  );
+}
+
+// Cash / Cheque / Online: the same three colours everywhere (categorical slots 1–3, checked for colour blindness)
+const MODES = [['cash', 'Cash'], ['cheque', 'Cheque'], ['online', 'Online']];
+const ModeKey = () => (
+  <span className="mode-key" aria-hidden="true">{MODES.map(([k, l]) => <span key={k}><i className={'sw m-' + k} />{l}</span>)}</span>
+);
+
+/** Who collected (or which shop paid) how much, split into Cash / Cheque / Online. A row opens its receipts. */
+function SplitList({ title, desc, by, rows, fileName }) {
+  const [open, setOpen] = useState(null);
+  const [tip, bind] = useTip();
+  const sum = k => rows.reduce((a, r) => a + Math.round(Number(r[k]) * 100), 0) / 100;
+  async function exportExcel() {
+    const XLSX = await import('xlsx');
+    const data = rows.map(r => ({ [by === 'person' ? 'Collected by' : 'Shop']: r.name, Receipts: r.n,
+      Cash: Number(r.cash), Cheque: Number(r.cheque), Online: Number(r.online), Total: Number(r.amount) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Report');
+    XLSX.writeFile(wb, fileName + '.xlsx');
+  }
+  if (!rows.length) return null;
+  return (
+    <Card title={title} desc={desc} actions={<ModeKey />}>
+      <div className="split">
+        <div className="split-head" aria-hidden="true">
+          <span>{by === 'person' ? 'Name' : 'Shop'}</span>{MODES.map(([k, l]) => <span key={k} className="m-col">{l}</span>)}<span className="m-col">Total</span><span />
+        </div>
+        {rows.map(r => {
+          const isOpen = open === r.key;
+          return (
+            <div key={r.key ?? r.name} className={'split-item' + (isOpen ? ' open' : '')}>
+              <button className="split-row" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : r.key)}>
+                <span className="split-name">
+                  <b>{r.name || 'Not given'}</b>
+                  <span className="sub">{num(r.n)} receipt{r.n === 1 ? '' : 's'}{r.city ? ` · ${titleCase(r.city)}` : ''}</span>
+                  <span className="split-bar">
+                    {MODES.filter(([k]) => Number(r[k]) > 0).map(([k, l]) => (
+                      <span key={k} className={'seg m-' + k} style={{ flexGrow: Number(r[k]) }}
+                        {...bind(`${r.name} · ${l}: ${inr(r[k])} (${r[k + '_n']} receipt${r[k + '_n'] === 1 ? '' : 's'}, ${pct(r[k], r.amount)})`)} />
+                    ))}
+                  </span>
+                </span>
+                {MODES.map(([k, l]) => (
+                  <span key={k} className={'split-amt a-' + k} data-label={l}>
+                    {Number(r[k]) ? <>{inr(r[k])}<small>{r[k + '_n']} · {pct(r[k], r.amount)}</small></> : <span className="muted">–</span>}
+                  </span>
+                ))}
+                <span className="split-amt a-total" data-label="Total"><b>{inr(r.amount)}</b></span>
+                <span className="chev" aria-hidden="true">›</span>
+              </button>
+              {isOpen && <SplitDetail by={by} k={r.key} name={r.name} />}
+            </div>
+          );
+        })}
+        <div className="split-row split-foot">
+          <span className="split-name"><b>Total</b><span className="sub">{num(rows.reduce((a, r) => a + r.n, 0))} receipts</span></span>
+          {MODES.map(([k, l]) => <span key={k} className={'split-amt a-' + k} data-label={l}>{inr(sum(k))}</span>)}
+          <span className="split-amt a-total" data-label="Total"><b>{inr(sum('amount'))}</b></span>
+          <span />
+        </div>
+      </div>
+      <div className="table-tools no-print" style={{ marginTop: 12 }}>
+        <button className="btn small" onClick={exportExcel}>{Icon.download} Download Excel</button>
+      </div>
+      {tip}
+    </Card>
+  );
+}
+
+/** Every receipt behind one person or shop, grouped by Cash / Cheque / Online. */
+function SplitDetail({ by, k, name }) {
+  const { range } = useDates();
+  const [s, setS] = useState({ loading: true });
+  useEffect(() => {
+    let live = true;
+    api(`/reports/collections/receipts?from=${range.from}&to=${range.to}&by=${by}&key=${encodeURIComponent(k ?? '')}`)
+      .then(d => live && setS({ list: d.receipts })).catch(e => live && setS({ error: e.message }));
+    return () => { live = false; };
+  }, [by, k, range.from, range.to]);
+  if (s.loading) return <div className="split-detail">{[80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />)}</div>;
+  if (s.error) return <div className="split-detail"><Notice tone="bad">{s.error}</Notice></div>;
+  const other = by === 'person'
+    ? { key: 'party_name', label: 'Shop' }
+    : { key: 'collected_by', label: 'Collected by' };
+  return (
+    <div className="split-detail">
+      {MODES.map(([mk, label]) => {
+        const list = s.list.filter(x => x.mode.toLowerCase() === mk);
+        if (!list.length) return null;
+        const total = list.reduce((a, x) => a + Math.round(Number(x.amount) * 100), 0) / 100;
+        const details = mk === 'cheque'
+          ? [{ key: 'bank', label: 'Bank', render: titleCase }, { key: 'cheque_no', label: 'Cheque no.' }, { key: 'cheque_date', label: 'Cheque date', render: date }]
+          : mk === 'online' ? [{ key: 'cheque_no', label: 'Reference' }, { key: 'bank', label: 'Bank', render: titleCase }]
+            : [{ key: 'account', label: 'Account' }];
+        return (
+          <div key={mk} className="mode-group">
+            <h4><i className={'sw m-' + mk} />{label}<span className="muted"> · {num(list.length)} receipt{list.length === 1 ? '' : 's'} · </span>{inr(total)}</h4>
+            <DataTable stack fileName={`${name} ${label}`} rows={list} exportable={false}
+              cols={[{ key: 'v_no', label: 'Receipt', render: (v, x) => <>{v}<span className="sub">{date(x.date)}</span></> }, other,
+                ...details, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -243,16 +353,17 @@ export function Outstanding() {
   const d = state.data;
   return (
     <>
-      <Head title="Money to collect" sub="From the Outstanding Debtors statement" />
+      <Head title="Money to collect" sub="From the Outstanding Debtors statement" period={d?.as_on && `Statement as on ${date(asOn || d.as_on)}`} />
       {state.error && <Notice tone="bad">{state.error}</Notice>}
-      {state.loading && !d ? <Loading /> : !d?.summary ? nothing('outstanding statement') : (
+      {state.loading && !d ? <ReportSkeleton /> : !d?.summary ? nothing('outstanding statement') : (
         <>
           <div className="datebar no-print" style={{ marginBottom: 16 }}>
             <label className="small muted" htmlFor="ason">Statement as on</label>
-            <select id="ason" style={{ width: 'auto', minWidth: 200 }} value={d.as_on} onChange={e => setAsOn(e.target.value)}>
+            <select id="ason" style={{ width: 'auto', minWidth: 200 }} value={asOn || d.as_on} onChange={e => setAsOn(e.target.value)}>
               {d.snapshots.map(s => <option key={s} value={s}>{date(s)}</option>)}
             </select>
           </div>
+          {state.loading ? <ReportSkeleton kpis={3} /> : <>
           <div className="kpis">
             <Kpi tone="blue" label="Total to collect" value={short(d.summary.total)} sub={`${num(d.summary.bills)} bills · ${num(d.summary.parties)} parties`} title={inr(d.summary.total)} />
             <Kpi label="Older than 4 weeks" value={short(d.summary.over_4)} sub={`${pct(d.summary.over_4, d.summary.total)} of total`} title={inr(d.summary.over_4)} />
@@ -285,6 +396,7 @@ export function Outstanding() {
               { key: 'party_name', label: 'Party' }, { key: 'salesman', label: 'Salesman', render: titleCase }, { key: 'age_weeks', label: 'Age', num: 1, render: v => v + ' wk' },
               { key: 'balance', label: 'Amount', num: 1, render: money }]} />
           </Card>
+          </>}
         </>
       )}
     </>
@@ -301,7 +413,7 @@ function PartySearch({ asOn }) {
   }, [dq, asOn]);
   const total = res?.bills.reduce((a, b) => a + Math.round(Number(b.balance) * 100), 0) / 100;
   return (
-    <Card title="Find a party" desc="Type a shop name, party code or bill number">
+    <Card className="no-print" title="Find a party" desc="Type a shop name, party code or bill number">
       <input type="search" placeholder="e.g. Golden Sweets" value={q} onChange={e => setQ(e.target.value)} aria-label="Search party" />
       {res && (res.bills.length ? (
         <div style={{ marginTop: 14 }}>
