@@ -13,6 +13,7 @@ const NAV = [
     { to: '/sales', label: 'Sales', icon: Icon.sales },
     { to: '/collections', label: 'Money received', icon: Icon.money },
     { to: '/outstanding', label: 'Money to collect', icon: Icon.clock },
+    { to: '/stock', label: 'Stock', icon: Icon.box },
     { to: '/gst', label: 'GST', icon: Icon.gst },
     { to: '/returns', label: 'Returns', icon: Icon.returns },
     { to: '/purchases', label: 'Purchases', icon: Icon.purchase },

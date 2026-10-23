@@ -171,7 +171,7 @@ export default function Upload() {
           <span style={{ color: 'var(--primary)' }}>{Icon.cloud}</span>
           <h2>Click here to choose files</h2>
           <p className="muted">or drag and drop them here</p>
-          <p className="small muted">Sales, Purchase, Credit Note, Debit Note, Receipt Book, Outstanding · .xls, .xlsx or .csv · up to {MAX_MB} MB each</p>
+          <p className="small muted">Sales, Purchase, Credit Note, Debit Note, Receipt Book, Outstanding, Stock Statement · .xls, .xlsx or .csv · up to {MAX_MB} MB each</p>
           <span className="btn primary" style={{ marginTop: 6 }}>Choose files</span>
         </div>
       )}
@@ -349,7 +349,7 @@ function FileCard({ f, meta, busy, onChange, onRecheck, onUndo, onRemove, onDele
 function Summary({ f }) {
   const s = f.check?.stats || {};
   const totalsOk = f.check?.reconciliation?.length && f.check.reconciliation.every(r => r.status !== 'mismatch');
-  return <span>{num(s.rows)} rows{s.docs ? ` · ${num(s.docs)} bills` : ''}{s.taxable ? ` · Taxable ${inr(s.taxable)}` : ''}{s.amount ? ` · ${inr(s.amount)}` : ''}{s.balance ? ` · Balance ${inr(s.balance)}` : ''}
+  return <span>{num(s.rows)} rows{s.docs ? ` · ${num(s.docs)} bills` : ''}{s.taxable ? ` · Taxable ${inr(s.taxable)}` : ''}{s.amount ? ` · ${inr(s.amount)}` : ''}{s.balance ? ` · Balance ${inr(s.balance)}` : ''}{s.items ? ` · ${num(s.items)} items, ${num(s.stock_qty)} units` : ''}{s.stock_value ? ` · Stock value ${inr(s.stock_value)}` : ''}
     {totalsOk ? ' · ✓ totals match the file' : ''}{f.check?.issues?.filter(i => i.level === 'warning').length ? ` · ${f.check.issues.filter(i => i.level === 'warning').length} note(s)` : ''}</span>;
 }
 

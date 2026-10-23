@@ -2,7 +2,7 @@ import { useState } from 'react';
 import DateBar, { useDates } from '../components/DateBar.jsx';
 import useReport from '../components/useReport.js';
 import DataTable from '../components/DataTable.jsx';
-import { Kpi, Card, Notice, Bars, Columns, Empty, ReportSkeleton, useTip, PrintHeader, printReport } from '../components/ui.jsx';
+import { Kpi, Card, Notice, Bars, Columns, Empty, ReportSkeleton, useTip, PrintHeader, printReport, Badge } from '../components/ui.jsx';
 import { useAuth } from '../auth.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { api } from '../api.js';
@@ -222,11 +222,7 @@ export function Collections() {
           <SplitList title="Collected by" desc={<>“Office counter” means paid at the office.<span className="no-print"> Click a name to see each receipt.</span></>} by="person"
             rows={d.people} fileName="Collected by" />
           <SplitList title="Shops that paid the most" desc={<span className="no-print">Click a shop to see each receipt.</span>} by="party" rows={d.parties} fileName="Shops that paid" />
-          <Card title="Cheques" desc="Cheques received, with bank and cheque date">
-            <DataTable stack fileName="Cheques" rows={d.cheques} footer={{ v_no: 'Total', amount: d.cheque_total }} empty="No cheques for these dates."
-              cols={[{ key: 'v_no', label: 'Receipt' }, { key: 'party_name', label: 'Shop' }, { key: 'bank', label: 'Bank', render: titleCase },
-                { key: 'cheque_no', label: 'Cheque no.' }, { key: 'cheque_date', label: 'Cheque date', render: date }, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
-          </Card>
+          <AllReceipts />
           <Card title="Where the money went">
             <DataTable fileName="Accounts" rows={d.accounts} cols={[{ key: 'name', label: 'Account' }, { key: 'n', label: 'Receipts', num: 1 }, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
           </Card>
@@ -343,6 +339,192 @@ function SplitDetail({ by, k, name }) {
   );
 }
 
+/** Every receipt for the chosen dates: party, salesman, mode, cheque / reference. Filter by mode or salesman, or search. */
+function AllReceipts() {
+  const r = useReport('collections/receipts');
+  const [mode, setMode] = useState('');
+  const [person, setPerson] = useState('');
+  const [q, setQ] = useState('');
+  const list = r.data?.receipts || [];
+  const people = [...new Set(list.map(x => x.collected_by).filter(Boolean))].sort();
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = list.filter(x => (!mode || x.mode === mode) && (!person || x.collected_by === person)
+    && words.every(w => `${x.party_name} ${x.party_code} ${x.city} ${x.v_no} ${x.cheque_no} ${x.bank}`.toLowerCase().includes(w)));
+  const total = shown.reduce((a, x) => a + Math.round(Number(x.amount) * 100), 0) / 100;
+  return (
+    <Card title="All receipts" desc="Every receipt with the party, the salesman who collected it and how it was paid.">
+      {r.loading ? [70, 90, 60].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />) : r.error ? <Notice tone="bad">{r.error}</Notice> : (
+        <>
+          <div className="form-row no-print" style={{ marginBottom: 12 }}>
+            <div className="datebar" role="group" aria-label="Payment mode" style={{ flex: 'none' }}>
+              {[['', 'All'], ...MODES.map(([k, l]) => [l, l])].map(([v, l]) => (
+                <button key={l} className={'chip' + (mode === v ? ' on' : '')} onClick={() => setMode(v)}>{v && <i className={'sw m-' + v.toLowerCase()} />}{l}</button>
+              ))}
+            </div>
+            <label className="field"><span>Salesman</span>
+              <select value={person} onChange={e => setPerson(e.target.value)}>
+                <option value="">Everyone</option>{people.map(p => <option key={p} value={p}>{p}</option>)}
+              </select></label>
+            <label className="field search-field"><span>Search</span>
+              <input type="search" placeholder="Party, code, city, receipt or cheque no." value={q} onChange={e => setQ(e.target.value)} /></label>
+          </div>
+          <p className="small muted" style={{ margin: '0 0 8px' }}>{num(shown.length)} of {num(list.length)} receipts · total <b style={{ color: 'var(--text)' }}>{inr(total)}</b></p>
+          <DataTable stack="wide" fileName="All receipts" rows={shown} empty="No receipts match." footer={{ date: 'Total', amount: total }}
+            cols={[
+              { key: 'date', label: 'Date', render: v => <span className="nowrap">{date(v)}</span>, excel: x => date(x.date) },
+              { key: 'v_no', label: 'Receipt no.', render: v => <span className="nowrap">{v}</span> },
+              { key: 'party_name', label: 'Party', render: (v, x) => <>{v}{x.city && <span className="sub">{titleCase(x.city)}</span>}</>,
+                excel: x => x.city ? `${x.party_name}, ${titleCase(x.city)}` : x.party_name },
+              { key: 'party_code', label: 'Party code', render: v => v || '—' },
+              { key: 'collected_by', label: 'Salesman', render: v => v || '—' },
+              { key: 'mode', label: 'Mode', render: v => <span className="nowrap"><i className={'sw m-' + String(v).toLowerCase()} />{v}</span> },
+              { key: 'cheque_no', label: 'Cheque / reference', render: (v, x) => v ? <>{v}<span className="sub">{[titleCase(x.bank), x.cheque_date && date(x.cheque_date)].filter(Boolean).join(' · ')}</span></> : <span className="muted">{x.account || '—'}</span>,
+                excel: x => [x.cheque_no, x.bank, x.cheque_date].filter(Boolean).join(' / ') || x.account },
+              { key: 'amount', label: 'Amount', num: 1, render: money },
+            ]} />
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ Stock
+const STOCK_STATUS = {
+  out: ['Out of stock', 'bad'], low: ['Low', 'warn'], excess: ['Too much', 'info'], no_sales: ['Not selling', 'grey'], ok: ['OK', 'good'],
+  minus: ['Check', 'warn'],
+};
+const qtyFmt = v => num(v);
+// whole units read better in a stock table; small fractions (e.g. 0.5 kg) keep one decimal
+const units = v => { const n = Number(v); return Math.abs(n) >= 10 ? Math.round(n).toLocaleString('en-IN') : num(Math.round(n * 10) / 10); };
+// main figure plus a short note only when there were returns, e.g. "+48 returns"
+const inOut = (a, b, note) => (v, i) => (
+  <><span className="nowrap">{units(Number(i[a]) + Number(i[b]))}</span>
+    {Number(i[b]) > 0 && <span className="sub nowrap">{note(units(i[b]))}</span>}</>
+);
+
+export function Stock() {
+  const [asOn, setAsOn] = useState('');
+  const [s, setS] = useState({ loading: true });
+  const [filter, setFilter] = useState('all');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    let live = true;
+    setS(x => ({ ...x, loading: true }));
+    api('/reports/stock' + (asOn ? `?as_on=${asOn}` : '')).then(data => live && setS({ data })).catch(e => live && setS({ error: e.message }));
+    return () => { live = false; };
+  }, [asOn]);
+  const d = s.data;
+  const L = d?.limits || {};
+  const FILTERS = [['all', 'All items'], ['out', 'Out of stock'], ['low', `Low (under ${L.low} days)`], ['excess', `Too much (over ${L.excess} days)`],
+    ['no_sales', 'Not selling'], ['minus', 'Check: minus'], ...(d?.base ? [['near_expiry', 'Near expiry']] : [])];
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const items = (d?.items || []).filter(i => (filter === 'all' || (filter === 'near_expiry' ? i.near_expiry : i.status === filter))
+    && words.every(w => `${i.name} ${i.code} ${i.brand}`.toLowerCase().includes(w)));
+  return (
+    <>
+      <Head title="Stock" sub="Counted from your uploaded Purchase, Sales, Credit Note and Debit Note files" period={d?.as_on && `Stock as on ${date(d.as_on)}`} />
+      {s.error && <Notice tone="bad">{s.error}</Notice>}
+      {s.loading && !d ? <ReportSkeleton /> : !d?.as_on ? (
+        <Card><Empty title="No purchases or sales uploaded yet">
+          <p>Stock is counted from your Purchase, Sales, Credit Note and Debit Note files. Upload them on the <b>Upload files</b> page.</p>
+        </Empty></Card>
+      ) : (
+        <>
+          <div className="datebar no-print" style={{ marginBottom: 16 }}>
+            <label className="small muted" htmlFor="stockason">Stock as on</label>
+            <input id="stockason" type="date" style={{ width: 180, minHeight: 34 }} value={asOn || d.as_on} max={d.latest} min={d.first || undefined}
+              onChange={e => e.target.value && setAsOn(e.target.value)} />
+            {asOn && asOn !== d.latest && <button className="chip" onClick={() => setAsOn('')}>Latest ({date(d.latest)})</button>}
+          </div>
+          {s.loading ? <ReportSkeleton kpis={4} /> : <>
+            <div className="kpis k3">
+              <Kpi tone="blue" label="Stock value" value={short(d.summary.value)} title={inr(d.summary.value)}
+                sub={`${num(d.summary.items)} items · ${num(d.summary.qty)} units${d.summary.unvalued ? ` · ${num(d.summary.unvalued)} without a purchase rate` : ''}`} />
+              <Kpi label="Out of stock" value={num(d.summary.out)} sub="items selling, none left" />
+              <Kpi label={`Low stock (under ${L.low} days)`} value={num(d.summary.low)} sub="items to reorder soon" />
+              <Kpi label={`Too much (over ${L.excess} days)`} value={short(d.summary.excess_value)} sub="stock value above need" />
+              <Kpi label="Not selling" value={short(d.summary.no_sales_value)} sub={`${num(d.summary.no_sales)} items with no sales in 30 days`} />
+              <Kpi label="Check: minus stock" value={num(d.summary.minus)} sub="sold more than came in, in your files" />
+            </div>
+            <Notice tone="info"><p className="small">
+              {d.base
+                ? <>Starting from your <b>Stock Statement of {date(d.base)}</b>, plus purchases and returns from shops, minus sales and returns to the company, uploaded after it up to {date(d.as_on)}.</>
+                : <>Counted from your uploaded files from <b>{date(d.first)}</b> to <b>{date(d.as_on)}</b>: purchases + returns from shops − sales − returns to the company.
+                  Stock you already had before {date(d.first)} is not in these files, so some items can show less (or minus) stock.
+                  To fix that, upload a <b>Stock Statement</b> once (optional): the count then starts from it.</>}
+              {' '}<b>Sold per day</b> is the average over the {num(d.sales_days)} day{d.sales_days === 1 ? '' : 's'} with sales uploaded in the 30 days up to {date(d.as_on)}.
+              Value is quantity × the latest purchase rate.
+            </p></Notice>
+            <Card className="stock-items" title="Items" desc={<span className="no-print">Click a column name to sort. Download Excel gives exactly what is shown.</span>}>
+              <div className="form-row no-print" style={{ marginBottom: 12 }}>
+                <div className="datebar" role="group" aria-label="Show" style={{ flex: '1 1 100%' }}>
+                  {FILTERS.map(([k, l]) => <button key={k} className={'chip' + (filter === k ? ' on' : '')} onClick={() => setFilter(k)}>{l}</button>)}
+                </div>
+                <label className="field search-field"><span>Search</span>
+                  <input type="search" placeholder="Item name, code or brand" value={q} onChange={e => setQ(e.target.value)} /></label>
+              </div>
+              <DataTable stack="wide" fileName={`Stock ${d.as_on}`} rows={items} empty="No items match." rowKey={i => i.code} expand={i => <ItemLedger code={i.code} asOn={d.as_on} />}
+                cols={[
+                  { key: 'code', label: 'SKU code', render: v => <span className="nowrap">{v}</span> },
+                  { key: 'name', label: 'Item name', render: (v, i) => <>{v || '—'}{i.brand && <span className="sub">{i.brand}</span>}</> },
+                  { key: 'brand', label: 'Brand', excelOnly: true },
+                  ...(d.base ? [{ key: 'opening', label: 'Opening', num: 1, render: units }] : []),
+                  { key: 'bought', label: 'Came in', num: 1, render: inOut('bought', 'returned_in', n => `+${n} returns`), sortValue: i => Number(i.bought) + Number(i.returned_in),
+                    excel: i => Number(i.bought) + Number(i.returned_in) },
+                  { key: 'sold', label: 'Went out', num: 1, render: inOut('sold', 'returned_out', n => `${n} to company`), sortValue: i => Number(i.sold) + Number(i.returned_out),
+                    excel: i => Number(i.sold) + Number(i.returned_out) },
+                  { key: 'qty', label: 'In stock', num: 1, render: v => <b className="nowrap">{units(v)}</b> },
+                  { key: 'value', label: 'Value', num: 1, excel: i => i.value, render: (v, i) => v == null ? '—' : <><span className="nowrap">{inr(v)}</span>{i.rate != null && <span className="sub">@ {inr(i.rate)}</span>}</> },
+                  { key: 'rate', label: 'Purchase rate', num: 1, excelOnly: true },
+                  { key: 'per_day', label: 'Sold per day', num: 1, excelOnly: true },
+                  { key: 'cover', label: 'Days left', num: 1, sortValue: i => i.cover ?? 1e9, excel: i => i.cover,
+                    render: (v, i) => <><span className="nowrap">{v == null ? '—' : v > 999 ? '999+' : num(v)}</span>{Number(i.per_day) > 0 && <span className="sub nowrap">selling {units(i.per_day)}/day</span>}</> },
+                  { key: 'status', label: 'Status', render: (v, i) => <span className="row-actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                    <Badge tone={STOCK_STATUS[v][1]}>{STOCK_STATUS[v][0]}</Badge>
+                    {i.near_expiry && <Badge tone="warn">Expiry {date(i.expiry)}</Badge>}</span>,
+                  excel: i => STOCK_STATUS[i.status][0] + (i.near_expiry ? ` · expiry ${i.expiry}` : '') },
+                ]} />
+            </Card>
+            {d.brands.length > 0 && <div className="grid two" style={{ marginTop: 14 }}>
+              <Card title="Stock value by brand">
+                <Bars items={d.brands} value="value" fmt={short} tipText={b => `${b.name}: ${inr(b.value)} · ${num(b.items)} items · ${num(b.qty)} units`} />
+              </Card>
+              <Card title="Brand-wise stock">
+                <DataTable fileName="Brand-wise stock" rows={d.brands} footer={{ name: 'Total', items: d.summary.items, qty: d.summary.qty, value: d.summary.value }}
+                  cols={[{ key: 'name', label: 'Brand' }, { key: 'items', label: 'Items', num: 1 }, { key: 'qty', label: 'Units', num: 1, render: num },
+                    { key: 'value', label: 'Value', num: 1, render: money }]} />
+              </Card>
+            </div>}
+          </>}
+        </>
+      )}
+      <StockMovement />
+    </>
+  );
+}
+
+/** In and out per item for the chosen dates, from the registers. */
+function StockMovement() {
+  const r = useReport('stock/movement');
+  return (
+    <Card title="Stock movement" desc="What came in and went out for the chosen dates, from your Purchase, Sales, Credit Note and Debit Note registers." className="stock-move">
+      <DateBar />
+      {r.loading ? [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />) : r.error ? <Notice tone="bad">{r.error}</Notice> : (
+        <DataTable stack="wide" fileName="Stock movement" rows={r.data.items} empty="No purchases or sales for these dates."
+          cols={[
+            { key: 'code', label: 'SKU code', render: v => <span className="nowrap">{v}</span> },
+            { key: 'name', label: 'Item name', render: (v, i) => <>{v}{i.brand && <span className="sub">{i.brand}</span>}</> },
+            { key: 'purchased', label: 'Purchased', num: 1, render: qtyFmt },
+            { key: 'returned_in', label: 'Returns from shops', num: 1, render: qtyFmt },
+            { key: 'sold', label: 'Sold', num: 1, render: qtyFmt },
+            { key: 'returned_out', label: 'Returned to company', num: 1, render: qtyFmt },
+            { key: 'net', label: 'Net change', num: 1, render: v => <b>{Number(v) > 0 ? '+' : ''}{num(v)}</b> },
+          ]} />
+      )}
+    </Card>
+  );
+}
+
 // ------------------------------------------------------------------ Outstanding
 export function Outstanding() {
   const [asOn, setAsOn] = useState('');
@@ -385,8 +567,8 @@ export function Outstanding() {
                   { key: 'bills', label: 'Bills', num: 1 }, { key: 'oldest', label: 'Oldest', num: 1, render: v => v + ' wk' }, { key: 'balance', label: 'Amount', num: 1, render: money }]} />
             </Card>
           </div>
-          <Card title="Salesman-wise" desc="Who needs to collect how much, and how old it is">
-            <DataTable fileName="Salesman-wise outstanding" rows={d.salesmen}
+          <Card title="Salesman-wise" desc={<>Who needs to collect how much, and how old it is.<span className="no-print"> Click a salesman to see every bill.</span></>}>
+            <DataTable stack="wide" fileName="Salesman-wise outstanding" rows={d.salesmen} rowKey={r => r.name ?? ""} expand={r => <SalesmanBills name={r.name} asOn={d.as_on} />}
               footer={Object.assign({ name: 'Total', bills: d.summary.bills, total: d.summary.total }, ...d.summary.buckets.map((b, k) => ({ ['b' + (k + 1)]: b.balance })))}
               cols={[{ key: 'name', label: 'Salesman', render: titleCase }, { key: 'bills', label: 'Bills', num: 1 },
                 ...d.summary.buckets.map((b, k) => ({ key: 'b' + (k + 1), label: b.name, num: 1, render: rupees })),
@@ -401,6 +583,81 @@ export function Outstanding() {
         </>
       )}
     </>
+  );
+}
+
+const AGE_TONE = w => (w <= 4 ? 'good' : w <= 8 ? 'warn' : 'bad');
+
+/** Every unpaid bill of one salesman (opens under the Salesman-wise row). */
+function SalesmanBills({ name, asOn }) {
+  const [s, setS] = useState({ loading: true });
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    let live = true;
+    api(`/reports/outstanding/salesman?as_on=${asOn}&name=${encodeURIComponent(name ?? '')}`)
+      .then(d => live && setS({ bills: d.bills })).catch(e => live && setS({ error: e.message }));
+    return () => { live = false; };
+  }, [name, asOn]);
+  if (s.loading) return [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />);
+  if (s.error) return <Notice tone="bad">{s.error}</Notice>;
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const bills = s.bills.filter(b => words.every(w => `${b.party_name} ${b.party_code} ${b.bill_no}`.toLowerCase().includes(w)));
+  const sum = k => bills.reduce((a, b) => a + Math.round(Number(b[k]) * 100), 0) / 100;
+  const parties = new Set(bills.map(b => b.party_code || b.party_name)).size;
+  return (
+    <div className="detail-panel">
+      <div className="form-row no-print" style={{ marginBottom: 8 }}>
+        <p style={{ margin: 0, flex: '1 1 260px' }}><b>{titleCase(name) || 'Not given'}</b>: {num(bills.length)} bill{bills.length === 1 ? '' : 's'} · {num(parties)} part{parties === 1 ? 'y' : 'ies'} · due <b>{inr(sum('balance'))}</b></p>
+        <label className="field search-field"><span>Search these bills</span>
+          <input type="search" placeholder="Party, code or bill no." value={q} onChange={e => setQ(e.target.value)} /></label>
+      </div>
+      <DataTable stack="wide" fileName={`Outstanding ${name} ${asOn}`} rows={bills} empty="No bills match."
+        footer={{ date: 'Total', bill_amount: sum('bill_amount'), received: sum('received'), balance: sum('balance') }}
+        cols={[
+          { key: 'date', label: 'Bill date', render: v => <span className="nowrap">{date(v)}</span>, excel: b => b.date },
+          { key: 'bill_no', label: 'Bill no.', render: (v, b) => <>{v}{b.trn && <span className="sub">{b.trn}</span>}</> },
+          { key: 'party_name', label: 'Party' },
+          { key: 'party_code', label: 'Party code', render: v => v || '—' },
+          { key: 'bill_amount', label: 'Bill amount', num: 1, render: money },
+          { key: 'received', label: 'Received', num: 1, render: money },
+          { key: 'balance', label: 'Due', num: 1, render: v => <b>{money(v)}</b> },
+          { key: 'age_weeks', label: 'Age', num: 1, render: v => <Badge tone={AGE_TONE(v)}>{v} wk</Badge>, excel: b => b.age_weeks },
+        ]} />
+    </div>
+  );
+}
+
+const LEDGER_TYPE = { purchase: ['Purchase', 'info'], credit_note: ['Return from shop', 'good'], sales: ['Sale', 'grey'], debit_note: ['Return to company', 'warn'] };
+
+/** Every purchase, sale and return of one item, newest first, with the stock after each (opens under the item row). */
+function ItemLedger({ code, asOn }) {
+  const [s, setS] = useState({ loading: true });
+  useEffect(() => {
+    let live = true;
+    api(`/reports/stock/item?as_on=${asOn}&code=${encodeURIComponent(code)}`)
+      .then(d => live && setS({ data: d })).catch(e => live && setS({ error: e.message }));
+    return () => { live = false; };
+  }, [code, asOn]);
+  if (s.loading) return [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />);
+  if (s.error) return <Notice tone="bad">{s.error}</Notice>;
+  const d = s.data;
+  return (
+    <div className="detail-panel">
+      <p className="small" style={{ margin: '0 0 8px' }}>
+        {d.base ? <>Starting stock on {date(d.base)} (Stock Statement): <b>{num(d.opening)}</b>. </> : <>Counted from your first upload. </>}
+        {num(d.lines.length)} entr{d.lines.length === 1 ? 'y' : 'ies'} up to {date(asOn)}, newest first.
+      </p>
+      <DataTable stack="wide" fileName={`Item ${code} ledger`} rows={d.lines} empty="No purchases, sales or returns for this item."
+        cols={[
+          { key: 'date', label: 'Date', render: v => <span className="nowrap">{date(v)}</span>, excel: l => l.date },
+          { key: 'type', label: 'Entry', render: v => <Badge tone={LEDGER_TYPE[v][1]}>{LEDGER_TYPE[v][0]}</Badge>, excel: l => LEDGER_TYPE[l.type][0] },
+          { key: 'doc_no', label: 'Bill / note no.' },
+          { key: 'party_name', label: 'Party', render: (v, l) => <>{v || '—'}{l.party_code && <span className="sub">{l.party_code}</span>}</> },
+          { key: 'in', label: 'In', num: 1, render: v => (v == null ? '' : '+' + num(v)) },
+          { key: 'out', label: 'Out', num: 1, render: v => (v == null ? '' : '−' + num(v)) },
+          { key: 'balance', label: 'Stock after', num: 1, render: v => <b>{num(v)}</b> },
+        ]} />
+    </div>
   );
 }
 

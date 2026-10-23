@@ -9,7 +9,7 @@ import { Loading } from './components/ui.jsx';
 import { Login, Register, Forgot } from './pages/Auth.jsx';
 import Home from './pages/Home.jsx';
 import Upload from './pages/Upload.jsx';
-import { Sales, Gst, Returns, Purchases, Collections, Outstanding } from './pages/Reports.jsx';
+import { Sales, Gst, Returns, Purchases, Collections, Outstanding, Stock } from './pages/Reports.jsx';
 import { History, Formats, Team, Activity } from './pages/Settings.jsx';
 
 function Need({ min, children }) {
@@ -40,6 +40,7 @@ function App() {
           <Route path="purchases" element={<Purchases />} />
           <Route path="collections" element={<Collections />} />
           <Route path="outstanding" element={<Outstanding />} />
+          <Route path="stock" element={<Stock />} />
           <Route path="history" element={<History />} />
           <Route path="formats" element={<Need min="writer"><Formats /></Need>} />
           <Route path="team" element={<Need min="admin"><Team /></Need>} />

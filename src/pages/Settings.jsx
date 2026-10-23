@@ -8,7 +8,7 @@ import { Icon } from '../components/Icons.jsx';
 import { num, rangeLabel, dateTime, bytes } from '../format.js';
 import { StateSelect, STATE_NAME } from '../states.jsx';
 
-const TYPE_LABEL = { sales: 'Sales Register', purchase: 'Purchase Register', credit_note: 'Credit Note Register', debit_note: 'Debit Note Register', receipt: 'Receipt Book', outstanding: 'Outstanding Debtors' };
+const TYPE_LABEL = { sales: 'Sales Register', purchase: 'Purchase Register', credit_note: 'Credit Note Register', debit_note: 'Debit Note Register', receipt: 'Receipt Book', outstanding: 'Outstanding Debtors', stock: 'Stock Statement' };
 
 function useLoad(path) {
   const [s, set] = useState({ loading: true });

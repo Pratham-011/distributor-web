@@ -17,6 +17,7 @@ export const Icon = {
   search: <svg {...P} width="18" height="18"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,
   plus: <svg {...P} width="18" height="18"><path d="M12 5v14M5 12h14" /></svg>,
   trash: <svg {...P} width="18" height="18"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>,
+  box: <svg {...P}><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>,
   activity: <svg {...P}><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></svg>,
   undo: <svg {...P} width="18" height="18"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>,
   formats: <svg {...P}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 9v12" /></svg>,

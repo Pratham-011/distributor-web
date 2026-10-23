@@ -6,7 +6,7 @@ import { useAuth, can } from '../auth.jsx';
 import { short, inr, num, pct, date, dateShort, rupees } from '../format.js';
 
 export const AGE_SHADES = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
-const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['receipt', 'Receipts'], ['outstanding', 'Outstanding']];
+const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['receipt', 'Receipts'], ['outstanding', 'Outstanding'], ['stock', 'Stock']];
 
 export default function Home() {
   const { user } = useAuth();
