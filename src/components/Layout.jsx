@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth, can, ROLE_INFO } from '../auth.jsx';
 import { Icon } from './Icons.jsx';
 import { Notice } from './ui.jsx';
+import { date } from '../format.js';
 
 const NAV = [
   { group: null, items: [
@@ -35,7 +36,7 @@ export default function Layout() {
     <div className="app">
       <aside className={'side' + (open ? ' open' : '')} aria-label="Main menu">
         <div className="brand"><span className="logo">{Icon.logo}</span><div><b>{user.org_name}</b><small>Daily reports</small></div></div>
-        {NAV.map((g, i) => (
+        {[...NAV, ...(user.platform_admin ? [{ group: 'Software owner', items: [{ to: '/platform', label: 'Platform admin', icon: Icon.team }] }] : [])].map((g, i) => (
           <nav className="nav" key={i}>
             {g.group && <div className="nav-group">{g.group}</div>}
             {g.items.filter(it => !it.min || can(user, it.min)).map(it => (
@@ -53,6 +54,11 @@ export default function Layout() {
           <button className="btn small" onClick={signOut} title="Log out">{Icon.logout}<span className="hide-sm">Log out</span></button>
         </header>
         <main className="content" key={loc.pathname}>
+          {user.subscription && ['owner', 'admin'].includes(user.role) && user.subscription.days_left <= 7 && (
+            <Notice tone="warn">{user.subscription.days_left < 0
+              ? <>Your subscription ended on <b>{date(user.subscription.paid_until)}</b>. Please renew to keep using the portal.</>
+              : <>Your subscription ends on <b>{date(user.subscription.paid_until)}</b> ({user.subscription.days_left === 0 ? 'today' : `in ${user.subscription.days_left} day${user.subscription.days_left === 1 ? '' : 's'}`}). Please renew so your team can keep using the portal.</>}</Notice>
+          )}
           {!user.state_code && user.role === 'owner' && loc.pathname !== '/team' && (
             <Notice tone="warn">Please choose the state your business is GST-registered in, so out-of-state bills are checked correctly. <Link to="/team">Set it in Team &amp; access</Link></Notice>
           )}

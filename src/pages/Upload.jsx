@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, sendForm, watchJob, newJobId } from '../api.js';
 import { Icon } from '../components/Icons.jsx';
 import { Badge, Notice, Loading } from '../components/ui.jsx';
 import { useDates } from '../components/DateBar.jsx';
@@ -23,13 +23,43 @@ function Steps({ step }) {
   );
 }
 
-const MAX_MB = 50;          // same limit as the server (server/src/routes/uploads.js)
 let nextId = 0;             // each file in the list gets its own id, so removing one never mixes up the others
 
-function tooBigMessage(size) {
-  return `This file is too big: ${(size / 1048576).toFixed(1)} MB. Each file can be at most ${MAX_MB} MB. ` +
+function tooBigMessage(size, maxMb) {
+  return `This file is too big: ${(size / 1048576).toFixed(1)} MB. Each file can be at most ${maxMb} MB. ` +
     'Export a shorter date range from your billing software, or save it as .xlsx (usually much smaller than .xls or .csv), then add it again.';
 }
+
+/** "File 2 of 5", a bar for all files and a bar for this file: uploading %, waiting in line, or reading. */
+function ProgressPanel({ p, saving }) {
+  const done = p.n - 1;
+  const fileLabel = p.phase === 'upload' ? `Uploading… ${p.pct}%`
+    : p.phase === 'sent' ? 'Sent. Waiting for the server…'
+    : p.phase === 'waiting' ? `Waiting in line: ${p.ahead} file${p.ahead === 1 ? '' : 's'} ahead of yours`
+      : saving ? 'Saving the rows into your reports…' : 'Reading and checking the file…';
+  return (
+    <div className={'progress-panel' + (p.phase === 'waiting' ? ' waiting' : '')} role="status" aria-live="polite">
+      <div className="pp-top">
+        <b>{saving ? 'Saving' : 'Reading'} file {p.n} of {p.of}</b>
+        <span className="muted small pp-name">{p.name}</span>
+      </div>
+      <Bar value={p.phase === 'upload' ? p.pct : null} label={fileLabel} />
+      <p className="small" style={{ margin: '6px 0 0' }}>{fileLabel}</p>
+      {p.phase === 'waiting' && <p className="small muted" style={{ margin: '2px 0 0' }}>The server reads one file at a time so it never runs out of memory. Yours starts by itself: keep this page open.</p>}
+      {p.of > 1 && <>
+        <Bar value={Math.round((done / p.of) * 100)} label="All files" thin />
+        <p className="small muted" style={{ margin: '4px 0 0' }}>{done} of {p.of} files done</p>
+      </>}
+    </div>
+  );
+}
+// value 0..100, or null for "working, how long is unknown"
+const Bar = ({ value, label, thin }) => (
+  <div className={'bar-track' + (thin ? ' thin' : '') + (value == null ? ' busy' : '')} role="progressbar" aria-label={label}
+    aria-valuemin={0} aria-valuemax={100} aria-valuenow={value ?? undefined}>
+    <span style={value == null ? undefined : { width: value + '%' }} />
+  </div>
+);
 
 function fileState(f) {
   if (f.error) return 'error';
@@ -46,7 +76,8 @@ export default function Upload() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [over, setOver] = useState(false);
-  const [reading, setReading] = useState(null);   // { n, of } while files are being read
+  const [reading, setReading] = useState(null);   // { n, of, name, phase, pct, ahead } while files are being read
+  const [saving, setSaving] = useState(null);     // same, while files are being saved
   const [q, setQ] = useState('');
   const input = useRef();
   const { refresh } = useDates();
@@ -59,23 +90,30 @@ export default function Upload() {
   const add = list => setFiles(fs => [...fs, ...list.map(f => ({ uid: ++nextId, save_template: true, template_name: f.template?.name || '',
     open: !!f.error || !f.report_type || !!f.check?.errors, ...f }))]);
 
+  // Where a job is on the server, for the progress panel: waiting in line (how many ahead) or being read.
+  const follow = (job, set) => watchJob(job, st => set(p => (p && p.job === job && p.phase !== 'upload'
+    ? { ...p, phase: st.state === 'waiting' ? 'waiting' : st.state === 'reading' ? 'reading' : p.phase, ahead: st.ahead } : p)));
+
   // Files are sent one at a time: a big file can't hold up or break the others.
   async function choose(list) {
     if (!list?.length) return;
-    const all = [...list];
+    const all = [...list], maxMb = meta.max_file_mb || 25;
     setErr(''); setBusy(true); setStep('check');
-    add(all.filter(f => f.size > MAX_MB * 1048576).map(f => ({ file_name: f.name, size: f.size, error: tooBigMessage(f.size) })));
-    const fine = all.filter(f => f.size <= MAX_MB * 1048576);
+    add(all.filter(f => f.size > maxMb * 1048576).map(f => ({ file_name: f.name, size: f.size, error: tooBigMessage(f.size, maxMb) })));
+    const fine = all.filter(f => f.size <= maxMb * 1048576);
     for (let k = 0; k < fine.length; k++) {
-      const file = fine[k];
-      setReading({ n: k + 1, of: fine.length, name: file.name });
+      const file = fine[k], job = newJobId();
+      setReading({ job, n: k + 1, of: fine.length, name: file.name, phase: 'upload', pct: 0 });
+      const stop = follow(job, setReading);
       const form = new FormData();
       form.append('files', file);
       try {
-        add((await api('/uploads/preview', { method: 'POST', form })).files);
+        const r = await sendForm('/uploads/preview', form, { jobId: job,
+          onUpload: pct => setReading(p => (p?.job === job ? { ...p, pct, phase: pct < 100 ? 'upload' : p.phase === 'upload' ? 'sent' : p.phase } : p)) });
+        add(r.files);
       } catch (e) {
-        add([{ file_name: file.name, size: file.size, error: e.status === 413 ? tooBigMessage(file.size) : e.message }]);
-      }
+        add([{ file_name: file.name, size: file.size, error: e.status === 413 ? tooBigMessage(file.size, maxMb) : e.message }]);
+      } finally { stop(); }
     }
     setReading(null); setBusy(false);
   }
@@ -119,32 +157,38 @@ export default function Upload() {
     // accepting corrections doesn't change the columns, so the saved format still applies
     const onlyAccepting = Object.keys(changes).every(k => k === 'accepted');
     const accepted = structural ? [] : f.accepted || [];
-    update(id, { ...(structural ? { accepted } : changes), checking: true });
+    update(id, { ...(structural ? { accepted } : changes), checking: true, queue: null });
+    const job = newJobId();
+    const stop = watchJob(job, st => update(id, { queue: st.state === 'waiting' ? st.ahead : null }));
     try {
       const body = { header_row: f.header_row, report_type: f.report_type };
       if (!structural) Object.assign(body, { mapping: f.mapping, date_format: f.date_format, accept: accepted });
-      const r = await api('/uploads/preview/' + f.token, { method: 'POST', body });
+      const r = await api('/uploads/preview/' + f.token, { method: 'POST', body, headers: { 'X-Job-Id': job } }).finally(stop);
       const before = byId(id);
-      update(id, { ...r, checking: false, open: true, saveError: null,
+      update(id, { ...r, checking: false, queue: null, open: true, saveError: null,
         needs_mapping: structural ? r.needs_mapping : onlyAccepting ? !before.template || !!r.check?.errors : true,
         template: structural ? r.template : onlyAccepting ? before.template : null });
-    } catch (e) { update(id, { checking: false, saveError: e.message }); }
+    } catch (e) { update(id, { checking: false, queue: null, saveError: e.message }); }
   }
 
   async function saveAll() {
     setBusy(true);
-    for (const f of files) {
-      if (f.result || fileState({ ...f, needs_mapping: false }) !== 'ready') continue;
+    const todo = files.filter(f => !f.result && fileState({ ...f, needs_mapping: false }) === 'ready');
+    for (const [k, f] of todo.entries()) {
+      const job = newJobId();
+      setSaving({ job, n: k + 1, of: todo.length, name: f.file_name, phase: 'sent' });
+      const stop = follow(job, setSaving);
       update(f.uid, { saving: true });
       try {
-        const r = await api('/uploads/commit', { method: 'POST', body: {
+        const r = await api('/uploads/commit', { method: 'POST', headers: { 'X-Job-Id': job }, body: {
           token: f.token, report_type: f.report_type, header_row: f.header_row, mapping: f.mapping, date_format: f.date_format,
           save_template: f.save_template, template_name: f.template_name || undefined, accept: f.accepted || [] } });
         update(f.uid, { saving: false, result: r, open: false });
       } catch (e) {
         update(f.uid, { saving: false, saveError: e.message, check: e.data?.issues ? { ...f.check, errors: true, issues: e.data.issues } : f.check, open: true });
-      }
+      } finally { stop(); }
     }
+    setSaving(null);
     setBusy(false);
     refresh(true);
     setStep('done');
@@ -171,7 +215,7 @@ export default function Upload() {
           <span style={{ color: 'var(--primary)' }}>{Icon.cloud}</span>
           <h2>Click here to choose files</h2>
           <p className="muted">or drag and drop them here</p>
-          <p className="small muted">Sales, Purchase, Credit Note, Debit Note, Receipt Book, Outstanding, Stock Statement · .xls, .xlsx or .csv · up to {MAX_MB} MB each</p>
+          <p className="small muted">Sales, Purchase, Credit Note, Debit Note, Receipt Book, Outstanding, Stock Statement · .xls, .xlsx or .csv · up to {meta.max_file_mb || 25} MB each</p>
           <span className="btn primary" style={{ marginTop: 6 }}>Choose files</span>
         </div>
       )}
@@ -179,9 +223,9 @@ export default function Upload() {
 
       {step !== 'choose' && (
         <>
-          {reading && <Notice tone="info"><p><span className="spinner" style={{ width: 14, height: 14, verticalAlign: '-2px', marginRight: 8 }} />
-            Reading file {reading.n} of {reading.of}: <b style={{ overflowWrap: 'anywhere' }}>{reading.name}</b></p></Notice>}
-          {step === 'check' && !reading && (
+          {reading && <ProgressPanel p={reading} />}
+          {saving && <ProgressPanel p={saving} saving />}
+          {step === 'check' && !reading && !saving && (
             <Notice tone="info">
               <p><b>Please look at each file below.</b> Green and yellow files can be saved. Yellow means a new file format: we matched its columns for you — click <b>Check columns</b> if you want to see them. Red files need fixing first. Added a wrong file? Click <b>Remove</b> on it.</p>
             </Notice>
@@ -207,7 +251,7 @@ export default function Upload() {
             <button className="btn small" onClick={() => setQ('')}>Clear search</button></div></div>}
           <div className="actions">
             {step === 'check' && <button className="btn primary big" disabled={busy || !savable.length} onClick={saveAll}>
-              {busy ? 'Saving…' : `Save ${savable.length} ready file${savable.length === 1 ? '' : 's'}`}</button>}
+              {reading ? 'Reading files…' : busy ? 'Saving…' : `Save ${savable.length} ready file${savable.length === 1 ? '' : 's'}`}</button>}
             {step === 'done' && savable.length > 0 && <button className="btn primary big" disabled={busy} onClick={saveAll}>Save remaining {savable.length}</button>}
             {step === 'done' && <Link className="btn primary big" to="/">See today's reports</Link>}
             {step === 'check' && files.length === 1 && <button className="btn big" disabled={busy} onClick={() => input.current.click()}>{Icon.plus} Add more files</button>}
@@ -330,7 +374,8 @@ function FileCard({ f, meta, busy, onChange, onRecheck, onUndo, onRemove, onDele
               </div>
 
               <div style={{ marginTop: 18 }}>
-                <h3>Check result {f.checking && <span className="spinner" style={{ width: 16, height: 16, verticalAlign: 'middle', marginLeft: 8 }} />}</h3>
+                <h3>Check result {f.checking && <span className="spinner" style={{ width: 16, height: 16, verticalAlign: 'middle', marginLeft: 8 }} />}
+                  {f.checking && f.queue != null && <span className="small muted" style={{ fontWeight: 400, marginLeft: 8 }}>waiting in line ({f.queue} ahead)…</span>}</h3>
                 {f.check && <CheckResult check={f.check} onAccept={onAccept} busy={f.checking || f.saving} />}
               </div>
 
