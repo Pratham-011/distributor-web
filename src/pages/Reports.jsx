@@ -474,7 +474,7 @@ export function Stock() {
                   { key: 'sold', label: 'Went out', num: 1, render: inOut('sold', 'returned_out', n => `${n} to company`), sortValue: i => Number(i.sold) + Number(i.returned_out),
                     excel: i => Number(i.sold) + Number(i.returned_out) },
                   { key: 'qty', label: 'In stock', num: 1, render: v => <b className="nowrap">{units(v)}</b> },
-                  { key: 'value', label: 'Value', num: 1, excel: i => i.value, render: (v, i) => v == null ? '—' : <><span className="nowrap">{inr(v)}</span>{i.rate != null && <span className="sub">@ {inr(i.rate)}</span>}</> },
+                  { key: 'value', label: 'Value', num: 1, excel: i => i.value, render: (v, i) => v == null || Number(i.qty) < 0 ? '—' : <><span className="nowrap">{inr(v)}</span>{i.rate != null && <span className="sub">@ {inr(i.rate)}</span>}</> },
                   { key: 'rate', label: 'Purchase rate', num: 1, excelOnly: true },
                   { key: 'per_day', label: 'Sold per day', num: 1, excelOnly: true },
                   { key: 'cover', label: 'Days left', num: 1, sortValue: i => i.cover ?? 1e9, excel: i => i.cover,
