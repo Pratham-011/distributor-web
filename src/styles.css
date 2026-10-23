@@ -305,7 +305,7 @@ table.stack td .cell { min-width: 0; overflow-wrap: anywhere; }
 .form-row .search-field { flex: 2 1 260px; max-width: 420px; }
 .stock-move { margin-top: 14px; }
 /* item names stay readable; the table scrolls sideways instead of squeezing them */
-.stock-items th:nth-child(2), .stock-items td:nth-child(2) { min-width: 170px; }
+.stock-items th:nth-child(2), .stock-items td:nth-child(2) { min-width: 160px; }
 .stock-items td:first-child { white-space: nowrap; }
 /* numbers never break; the short notes under them stay on one line too */
 .stock-items td.num { white-space: nowrap; }

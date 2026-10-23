@@ -468,6 +468,7 @@ export function Stock() {
                   { key: 'code', label: 'SKU code', render: v => <span className="nowrap">{v}</span> },
                   { key: 'name', label: 'Item name', render: (v, i) => <>{v || '—'}{i.brand && <span className="sub">{i.brand}</span>}</> },
                   { key: 'brand', label: 'Brand', excelOnly: true },
+                  { key: 'mrp', label: 'MRP', num: 1, render: v => v == null ? '—' : <span className="nowrap">{inr(v, Number(v) % 1 ? 2 : 0)}</span>, excel: i => i.mrp },
                   ...(d.base ? [{ key: 'opening', label: 'Opening', num: 1, render: units }] : []),
                   { key: 'bought', label: 'Came in', num: 1, render: inOut('bought', 'returned_in', n => `+${n} returns`), sortValue: i => Number(i.bought) + Number(i.returned_in),
                     excel: i => Number(i.bought) + Number(i.returned_in) },
