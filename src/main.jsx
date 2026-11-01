@@ -1,22 +1,28 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
+import { api } from './api.js';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import './styles.css';
 import { AuthProvider, useAuth, can } from './auth.jsx';
 import { DateProvider } from './components/DateBar.jsx';
 import Layout from './components/Layout.jsx';
-import { Loading } from './components/ui.jsx';
+import { Loading, Notice } from './components/ui.jsx';
 import { Login, Register, Forgot } from './pages/Auth.jsx';
 import Home from './pages/Home.jsx';
 import Upload from './pages/Upload.jsx';
 import { Sales, Gst, Returns, Purchases, Collections, Outstanding, Stock } from './pages/Reports.jsx';
 import { History, Formats, Team, Activity } from './pages/Settings.jsx';
 import Platform from './pages/Platform.jsx';
+import Support from './pages/Support.jsx';
+import { SupportInfo } from './components/Support.jsx';
 import { Icon } from './components/Icons.jsx';
 
 /** Shown instead of the app when the business's portal is paused or its subscription has ended. */
 function Blocked({ info }) {
-  const { logout } = useAuth();
+  const { logout, switchTo } = useAuth();
+  const [others, setOthers] = useState([]);       // the person's other businesses that can still be opened
+  const [err, setErr] = useState('');
+  useEffect(() => { api('/auth/businesses').then(d => setOthers(d.businesses.filter(b => b.org_id !== d.current && !b.blocked))).catch(() => {}); }, []);
   return (
     <div className="auth-wrap">
       <div className="auth">
@@ -24,6 +30,16 @@ function Blocked({ info }) {
         <h1>{info.code === 'account_expired' ? 'Subscription ended' : 'Portal paused'}</h1>
         <p className="muted">{info.error}</p>
         <p className="small muted">Your data is safe and will be there when the portal is turned back on.</p>
+        <SupportInfo />
+        {others.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <p className="small muted" style={{ marginBottom: 6 }}>You can still open your other {others.length === 1 ? 'business' : 'businesses'}:</p>
+            {err && <Notice tone="bad">{err}</Notice>}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {others.map(b => <button key={b.user_id} className="btn" onClick={() => switchTo(b.user_id).catch(e => setErr(e.message))}>{b.name}</button>)}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <button className="btn primary" onClick={() => window.location.reload()}>Try again</button>
           <button className="btn" onClick={logout}>Log out</button>
@@ -67,6 +83,7 @@ function App() {
           <Route path="formats" element={<Need min="writer"><Formats /></Need>} />
           <Route path="team" element={<Need min="admin"><Team /></Need>} />
           <Route path="activity" element={<Need min="admin"><Activity /></Need>} />
+          <Route path="support" element={<Support />} />
           <Route path="platform" element={user.platform_admin ? <Platform /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

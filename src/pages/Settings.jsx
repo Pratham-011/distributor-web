@@ -143,8 +143,21 @@ export function Team() {
       <div className="page-head"><div className="grow"><h1>Team & access</h1><p className="muted">Add the people who work with you and choose what each person can do.</p></div></div>
       <Business />
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <Card title="Add a person" desc="They will create their own password using this email. A code is sent to confirm the email.">
-        <form className="form-row" onSubmit={e => { e.preventDefault(); act(() => api('/users/invite', { method: 'POST', body: inv }), `${inv.email} added. Ask them to open this website and choose "Create an account".`).then(() => setInv({ email: '', role: 'viewer' })); }}>
+      {s.data?.seats && <Seats seats={s.data.seats} />}
+      <Card title="Add a person" desc={s.data?.seats && s.data.seats.used >= s.data.seats.max
+        ? `All ${s.data.seats.max} places are in use. Each extra person is ₹${s.data.seats.extra_price.toLocaleString('en-IN')} a year: ask your software provider to add more.`
+        : 'They will create their own password using this email. A code is sent to confirm the email.'}>
+        <form className="form-row" onSubmit={async e => {
+          e.preventDefault();
+          try {
+            const r = await api('/users/invite', { method: 'POST', body: inv });
+            setMsg({ tone: 'good', text: r.added_existing
+              ? `${r.name} already uses Reportly, so they were added straight away. They will see this business in their business switcher after they log in.${r.emailed ? ' We emailed them.' : ''}`
+              : r.emailed ? `${inv.email} added, and we emailed them how to join. They open the website, choose "Create an account" and use this email.`
+                : `${inv.email} added. Ask them to open this website and choose "Create an account".` });
+            setInv({ email: '', role: 'viewer' }); load();
+          } catch (x) { setMsg({ tone: 'bad', text: x.message }); }
+        }}>
           <label className="field"><span>Email</span><input type="email" required placeholder="name@example.com" value={inv.email} onChange={e => setInv({ ...inv, email: e.target.value })} /></label>
           <label className="field"><span>Access</span><select value={inv.role} onChange={e => setInv({ ...inv, role: e.target.value })}>
             {assignable.map(r => <option key={r} value={r}>{ROLE_INFO[r].label} — {ROLE_INFO[r].about}</option>)}</select></label>
@@ -161,6 +174,10 @@ export function Team() {
                   {(assignable.includes(v) ? assignable : [v, ...assignable]).map(x => <option key={x} value={x}>{ROLE_INFO[x].label}</option>)}
                 </select>) },
               { key: 'last_login_at', label: 'Last login', render: v => v ? dateTime(v) : 'Never' },
+              { key: 'signed_in', label: 'Signed in', render: (v, r) => v
+                ? <><Badge tone="good">Yes</Badge><span className="sub">{r.device}</span>
+                  <button className="btn small" style={{ marginTop: 6 }} onClick={() => window.confirm(`Sign ${r.name} out of their device? They can then log in on another one.`) && act(() => api('/users/' + r.id + '/signout', { method: 'POST' }), `${r.name} was signed out.`)}>Sign out</button></>
+                : <span className="muted">No</span>, excel: r => r.signed_in ? 'Yes' : 'No' },
               { key: 'active', label: 'Status', render: (v, r) => r.id === user.id ? <Badge tone="good">Active</Badge> : (
                 <button className={'btn small' + (v ? ' danger' : '')} onClick={() => act(() => api('/users/' + r.id, { method: 'PATCH', body: { active: !v } }), v ? `${r.name} can no longer log in.` : `${r.name} can log in again.`)}>
                   {v ? 'Turn off' : 'Turn on'}</button>) },
@@ -183,23 +200,53 @@ export function Team() {
 function Business() {
   const { user, setUser } = useAuth();
   const owner = user.role === 'owner';
-  const [v, setV] = useState({ name: user.org_name, state_code: user.state_code || '' });
+  const p = user.profile || {};
+  const saved = { name: user.org_name, state_code: user.state_code || '', address: p.address || '', gstin: p.gstin || '', phone: p.phone || '', contact_email: p.contact_email || '' };
+  const [v, setV] = useState(saved);
   const [msg, setMsg] = useState(null);
+  useEffect(() => { setV(saved); }, [user.org_id]);   // another business was opened
+  const set = k => e => setV({ ...v, [k]: e.target.value });
+  const changed = Object.keys(saved).some(k => v[k] !== saved[k]);
   async function save(e) {
     e.preventDefault();
-    try { setUser((await api('/org', { method: 'PATCH', body: v })).user); setMsg({ tone: 'good', text: 'Business details saved.' }); }
+    try { setUser((await api('/org', { method: 'PATCH', body: v })).user); setMsg({ tone: 'good', text: 'Business profile saved.' }); }
     catch (e) { setMsg({ tone: 'bad', text: e.message }); }
   }
   return (
-    <Card title="Business details" desc={owner ? 'The GST state is where your business is registered (first two digits of your GSTIN). It is used to check that out-of-state bills charge IGST.' : `GST state: ${STATE_NAME[user.state_code] || 'not set'}. Only the Owner can change these.`}>
+    <Card title="Business profile" desc={owner ? 'The GST state is where your business is registered (first two digits of your GSTIN). It is used to check that out-of-state bills charge IGST.' : `GST state: ${STATE_NAME[user.state_code] || 'not set'}. Only the Owner can change these.`}>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      {owner && (
-        <form className="form-row" onSubmit={save}>
-          <label className="field"><span>Business name</span><input type="text" required value={v.name} onChange={e => setV({ ...v, name: e.target.value })} /></label>
-          <label className="field"><span>GST state</span><StateSelect required value={v.state_code} onChange={s => setV({ ...v, state_code: s })} /></label>
-          <button className="btn primary" disabled={v.name === user.org_name && v.state_code === (user.state_code || '')}>Save</button>
+      {owner ? (
+        <form onSubmit={save}>
+          <div className="form-row">
+            <label className="field"><span>Business name</span><input type="text" required value={v.name} onChange={set('name')} /></label>
+            <label className="field"><span>GST state</span><StateSelect required value={v.state_code} onChange={s => setV({ ...v, state_code: s })} /></label>
+            <label className="field"><span>GSTIN (optional)</span><input type="text" maxLength="15" placeholder="27ABCDE1234F1Z5" value={v.gstin} onChange={e => setV({ ...v, gstin: e.target.value.toUpperCase() })} /></label>
+          </div>
+          <div className="form-row">
+            <label className="field"><span>Phone (optional)</span><input type="tel" value={v.phone} onChange={set('phone')} /></label>
+            <label className="field"><span>Contact email (optional)</span><input type="email" value={v.contact_email} onChange={set('contact_email')} /></label>
+          </div>
+          <label className="field"><span>Address (optional)</span><textarea rows="2" maxLength="300" value={v.address} onChange={set('address')} /></label>
+          <button className="btn primary" disabled={!changed}>Save</button>
         </form>
+      ) : (
+        <p className="small muted" style={{ margin: 0 }}>{[p.gstin && `GSTIN ${p.gstin}`, p.phone, p.contact_email, p.address].filter(Boolean).join(' · ') || 'No other details added.'}</p>
       )}
+    </Card>
+  );
+}
+
+/** "3 of 3 places used": 1 Owner + 2 users are in every plan; each extra person is bought on top. */
+function Seats({ seats }) {
+  const full = seats.used >= seats.max;
+  return (
+    <Card title="People in your plan" desc={`Every plan has 1 Owner and ${seats.included - 1} users. Extra people are ₹${seats.extra_price.toLocaleString('en-IN')} each a year.`}>
+      <div className="seat-meter" role="img" aria-label={`${seats.used} of ${seats.max} places used`}>
+        {Array.from({ length: seats.max }, (_, i) => <span key={i} className={'seat' + (i < seats.used ? ' used' : '')} />)}
+      </div>
+      <p style={{ margin: '8px 0 0' }}><b>{seats.used} of {seats.max}</b> places used{seats.extra > 0 && <span className="muted"> · {seats.extra} extra bought</span>}.
+        {full && <span style={{ color: 'var(--warn)' }}> All places are in use. To add more people, ask your software provider.</span>}</p>
+      <p className="small muted" style={{ margin: '4px 0 0' }}>Each person can use one device at a time. If someone is signed in on a device they no longer have, use <b>Sign out</b> next to their name.</p>
     </Card>
   );
 }
@@ -210,7 +257,7 @@ const KINDS = [['', 'Everything'], ['upload', 'Uploads and downloads'], ['login'
 const TAG = {
   upload: ['Upload', 'info'], login: ['Login', 'grey'], team: ['Team', 'warn'], format: ['File format', 'grey'],
   business: ['Business', 'warn'], account: ['Sign-up', 'good'],
-  'login.failed': ['Failed login', 'bad'], 'upload.undone': ['Undo', 'warn'], 'upload.deleted': ['Delete', 'bad'], 'upload.downloaded': ['Download', 'grey'],
+  'login.failed': ['Failed login', 'bad'], 'login.blocked': ['Blocked: 2nd device', 'warn'], 'team.signed_out': ['Signed out', 'warn'], 'upload.undone': ['Undo', 'warn'], 'upload.deleted': ['Delete', 'bad'], 'upload.downloaded': ['Download', 'grey'],
 };
 const tagOf = action => TAG[action] || TAG[action.split('.')[0]] || [action, 'grey'];
 

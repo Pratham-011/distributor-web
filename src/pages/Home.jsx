@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import DateBar, { useDates } from '../components/DateBar.jsx';
 import useReport from '../components/useReport.js';
+import { SupportInfo, useSupport, hasSupport } from '../components/Support.jsx';
 import { Kpi, Card, Notice, Bars, Columns, Badge, ReportSkeleton } from '../components/ui.jsx';
 import { useAuth, can } from '../auth.jsx';
 import { short, inr, num, pct, date, dateShort, rupees } from '../format.js';
@@ -31,8 +32,15 @@ export default function Home() {
           {loading ? <ReportSkeleton /> : d && <Body d={d} />}
         </>
       )}
+      <HelpCard />
     </>
   );
+}
+
+/** Contact details at the bottom of the dashboard. */
+function HelpCard() {
+  const s = useSupport();
+  return hasSupport(s) ? <Card className="help-card" title="Need help?" desc="Uploads, reports, people or your plan: we are a call away."><SupportInfo /></Card> : null;
 }
 
 function UploadedFor({ range, dates }) {

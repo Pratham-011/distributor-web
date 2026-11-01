@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, getToken, setToken, setUnauthorizedHandler, setBlockedHandler } from './api.js';
+import { api, getToken, setToken, setUnauthorizedHandler, setBlockedHandler, rememberNotice } from './api.js';
 
 const AuthCtx = createContext(null);
 export const ROLES = ['viewer', 'writer', 'admin', 'owner'];
@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
       .catch(e => {
         if (stop) return;
         if (e.data?.code === 'account_paused' || e.data?.code === 'account_expired') { setBlocked(e.data); setReady(true); }
-        else if (e.status === 401 || e.status === 403) { setToken(null); setReady(true); }
+        else if (e.status === 401 || e.status === 403) { rememberNotice(e.message, e.data?.code); setToken(null); setReady(true); }
         else { setOffline(true); timer = setTimeout(check, 3000); }
       });
     check();
@@ -39,7 +39,12 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(({ token, user }) => { setToken(token); setUser(user); }, []);
   // the Log out button: tell the server first so it shows in the activity log
   const signOut = useCallback(() => api('/auth/logout', { method: 'POST' }).catch(() => {}).finally(logout), [logout]);
-  const value = useMemo(() => ({ user, ready, offline, blocked, signIn, logout, signOut, setUser }), [user, ready, offline, blocked, signIn, logout, signOut]);
+  // open another business of the same person (one login, several businesses)
+  const switchTo = useCallback(async userId => {
+    const r = await api('/auth/switch', { method: 'POST', body: { user_id: userId } });
+    setToken(r.token); setBlocked(null); setUser(r.user);
+  }, []);
+  const value = useMemo(() => ({ user, ready, offline, blocked, signIn, logout, signOut, setUser, switchTo }), [user, ready, offline, blocked, signIn, logout, signOut, switchTo]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

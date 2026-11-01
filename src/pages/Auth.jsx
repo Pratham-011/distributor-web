@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, takeNotice } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Icon } from '../components/Icons.jsx';
 import { Notice, PasswordInput } from '../components/ui.jsx';
 import { StateSelect } from '../states.jsx';
+import { SupportInfo } from '../components/Support.jsx';
 
 function Shell({ title, sub, children }) {
   return (
@@ -15,6 +16,7 @@ function Shell({ title, sub, children }) {
         {sub && <p className="muted" style={{ marginBottom: 0 }}>{sub}</p>}
         {children}
       </div>
+      <p className="small muted auth-help">Need help? <SupportInfo compact /></p>
     </div>
   );
 }
@@ -34,14 +36,18 @@ export function Login() {
   const nav = useNavigate();
   const [v, on] = useForm({ email: '', password: '' });
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [other, setOther] = useState(false);              // the person is already signed in on another device
+  const [notice] = useState(() => takeNotice());           // e.g. "You were signed out because this account was opened on another device."
   async function submit(e) {
-    e.preventDefault(); setErr(''); setBusy(true);
+    e.preventDefault(); setErr(''); setOther(false); setBusy(true);
     try { signIn(await api('/auth/login', { method: 'POST', body: v })); nav('/'); }
-    catch (e) { setErr(e.message); } finally { setBusy(false); }
+    catch (e) { setErr(e.message); setOther(e.data?.code === 'already_signed_in'); } finally { setBusy(false); }
   }
   return (
     <Shell title="Log in" sub="Welcome back. Please enter your email and password.">
+      {notice && !err && <Notice tone="warn">{notice}</Notice>}
       {err && <Notice tone="bad">{err}</Notice>}
+      {other && <p className="small muted" style={{ marginTop: -6 }}>Each person can use one device at a time. Choose <b>Log out</b> on the other device, or <Link to="/forgot">reset your password</Link> to sign it out.</p>}
       <form onSubmit={submit}>
         <Field label="Email" type="email" autoComplete="email" required value={v.email} onChange={on('email')} />
         <Field label="Password" type="password" autoComplete="current-password" required value={v.password} onChange={on('password')} />
@@ -98,7 +104,7 @@ export function Register() {
         <label className="field"><span>State where your business is GST-registered</span>
           <StateSelect value={v.state_code} onChange={s => setV(x => ({ ...x, state_code: s }))} />
           <small>The first two digits of your GSTIN. Used to check IGST on out-of-state bills. Not needed if you were invited.</small></label>
-        <Field label="Password" type="password" required minLength={8} autoComplete="new-password" value={v.password} onChange={on('password')} hint="At least 8 characters." />
+        <Field label="Password" type="password" required minLength={10} autoComplete="new-password" value={v.password} onChange={on('password')} hint="At least 10 characters." />
         <button className="btn primary big" disabled={busy}>{busy ? 'Please wait…' : 'Send me a code'}</button>
       </form>
       <div className="switch">Already have an account? <Link to="/login">Log in</Link></div>
@@ -133,7 +139,7 @@ export function Forgot() {
         <form onSubmit={reset}>
           {sent.demo_code && <div className="demo-code"><div className="small">Demo mode code</div><b>{sent.demo_code}</b></div>}
           <label className="field"><span>6-digit code</span><input className="otp" type="text" inputMode="numeric" maxLength={6} required value={v.code} onChange={on('code')} /></label>
-          <Field label="New password" type="password" required minLength={8} value={v.password} onChange={on('password')} hint="At least 8 characters." />
+          <Field label="New password" type="password" required minLength={10} value={v.password} onChange={on('password')} hint="At least 10 characters." />
           <button className="btn primary big" disabled={busy}>Change password</button>
         </form>
       )}

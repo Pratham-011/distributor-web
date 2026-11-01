@@ -1,6 +1,9 @@
 const BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 const KEY = 'dr_token';
 
+// why the person was signed out (another device, an admin, a password change): shown on the login page
+export const rememberNotice = (text, code) => { try { if (code === 'session_ended' && !/another|administrator|password|turned off/i.test(text)) return; sessionStorage.setItem('dr_notice', text); } catch { /* private mode */ } };
+export const takeNotice = () => { try { const t = sessionStorage.getItem('dr_notice'); sessionStorage.removeItem('dr_notice'); return t; } catch { return null; } };
 export const getToken = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 export const setToken = t => { try { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); } catch { /* private mode */ } };
 
@@ -29,7 +32,7 @@ export async function api(path, { method = 'GET', body, form, headers: extra } =
     throw new ApiError(0, { error: 'Cannot reach the server. Please check the internet connection.' });
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized();
+  if (res.status === 401 && !path.startsWith('/auth/')) { if (data.error) rememberNotice(data.error, data.code); onUnauthorized(); }
   if (BLOCKED.includes(data.code) && path !== '/auth/login') onBlocked(data);
   if (!res.ok) throw new ApiError(res.status, data);
   return data;
