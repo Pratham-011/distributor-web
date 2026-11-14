@@ -2,6 +2,7 @@
 // activity; subscriptions, seats and linked companies; money (payments, expenses, profit); pricing rules.
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import DataTable from '../components/DataTable.jsx';
 import { Kpi, Card, Notice, Badge, Bars, Columns, ReportSkeleton } from '../components/ui.jsx';
 import { inr, num, date, dateShort, dateTime, bytes } from '../format.js';
@@ -196,6 +197,7 @@ function OrgPanel({ org, orgs, settings, today, onChange }) {
               <button className="btn danger">Pause portal</button>
             </form>
           )}
+          <DeleteBusiness org={org} linked={d?.linked || []} onDone={onChange} />
         </section>
       </div>
 
@@ -451,6 +453,56 @@ function Pricing() {
       </form>
       <p className="small muted" style={{ marginBottom: 0 }}>These amounts are filled in for you when you add extra users or link a company, and you can still change them each time. A business cannot add people beyond its places until you add them here.</p>
     </Card>
+  );
+}
+
+// ------------------------------------------------------------------ deleting a business
+/** Deletes the business and everything it has, after the admin types its name. Cannot be undone. */
+function DeleteBusiness({ org, linked, onDone }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [withKids, setWithKids] = useState(false);
+  const [state, setState] = useState({});
+  if (org.id === user.org_id) return null;     // your own business can't be deleted from here
+  async function go(e) {
+    e.preventDefault();
+    const also = withKids && linked.length ? ` and its extra companies (${linked.map(c => c.name).join(', ')})` : '';
+    if (!window.confirm(`Delete "${org.name}"${also} for good?\n\nThis cannot be undone.`)) return;
+    setState({ busy: true });
+    try {
+      const r = await api(`/platform/orgs/${org.id}`, { method: 'DELETE', body: { confirm: name, with_companies: withKids } });
+      setState({ done: `Deleted "${r.deleted.name}"${r.companies_deleted.length ? ` and ${r.companies_deleted.join(', ')}` : ''}: ${r.deleted.users} people, ${r.deleted.uploads} uploads and all their data.` });
+      onDone();
+    } catch (x) { setState({ error: x.message }); }
+  }
+  return (
+    <div className="danger-zone">
+      <h3 style={{ marginTop: 14 }}>Delete this business</h3>
+      {state.done && <Notice tone="good">{state.done}</Notice>}
+      {!open ? (
+        <button type="button" className="btn danger small" onClick={() => setOpen(true)}>Delete business and all its data…</button>
+      ) : (
+        <form onSubmit={go}>
+          <p className="small" style={{ marginTop: 0 }}>This removes <b>everything</b> of {org.name} from the database and storage: its people and their logins, every upload and its original file, all report data, saved formats, payments, requests and its activity log. It <b>cannot be undone</b>. To keep the data, pause the portal instead.</p>
+          {linked.length > 0 && (
+            <label className="check" style={{ marginBottom: 10 }}>
+              <input type="checkbox" checked={withKids} onChange={e => setWithKids(e.target.checked)} />
+              <span>Also delete its extra companies: <b>{linked.map(c => c.name).join(', ')}</b>. If not ticked, they stay as businesses of their own.</span>
+            </label>
+          )}
+          {state.error && <Notice tone="bad">{state.error}</Notice>}
+          <div className="form-row">
+            <label className="field"><span>Type the business name to confirm: <b>{org.name}</b></span>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} autoComplete="off" /></label>
+            <div className="field" style={{ alignSelf: 'end', flexDirection: 'row', gap: 8, display: 'flex' }}>
+              <button className="btn danger" disabled={name.trim() !== org.name.trim() || state.busy}>{state.busy ? 'Deleting…' : 'Delete for good'}</button>
+              <button type="button" className="btn" onClick={() => { setOpen(false); setName(''); setState({}); }}>Cancel</button>
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 

@@ -546,3 +546,6 @@ fieldset.choice small { display: block; color: var(--muted); }
 .settle-bar { margin: -6px 0 16px; }
 .settle-bar .settle-label { align-self: center; margin-right: 2px; }
 .settle-sum { margin-top: 8px; line-height: 1.5; max-width: 900px; }
+
+/* deleting a business */
+.danger-zone { border-top: 1px solid var(--line, #e5e7eb); margin-top: 14px; }
