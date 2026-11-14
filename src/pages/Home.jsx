@@ -7,7 +7,7 @@ import { useAuth, can } from '../auth.jsx';
 import { short, inr, num, pct, date, dateShort, rupees } from '../format.js';
 
 export const AGE_SHADES = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
-const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['receipt', 'Receipts'], ['outstanding', 'Outstanding'], ['stock', 'Stock']];
+const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['receipt', 'Receipts'], ['outstanding', 'Outstanding'], ['stock', 'Stock'], ['delivery', 'Settled bills']];
 
 export default function Home() {
   const { user } = useAuth();
@@ -26,7 +26,7 @@ export default function Home() {
           {can(user, 'writer') ? <Link className="btn primary" to="/upload">Upload files</Link> : <p className="muted">Ask an Uploader or the Owner to upload files.</p>}</div></Card>
       ) : (
         <>
-          <DateBar />
+          <DateBar settleNote="Receipts and purchases are not split." />
           {range && dates && <UploadedFor range={range} dates={dates} />}
           {error && <Notice tone="bad">{error}</Notice>}
           {loading ? <ReportSkeleton /> : d && <Body d={d} />}

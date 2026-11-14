@@ -541,3 +541,8 @@ fieldset.choice legend { font-weight: 600; padding: 0 6px; }
 fieldset.choice label { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
 fieldset.choice small { display: block; color: var(--muted); }
 .chip .count { background: #d92d20; color: #fff; border-radius: 10px; padding: 0 6px; font-size: 12px; margin-left: 4px; }
+
+/* settled / unsettled switch */
+.settle-bar { margin: -6px 0 16px; }
+.settle-bar .settle-label { align-self: center; margin-right: 2px; }
+.settle-sum { margin-top: 8px; line-height: 1.5; max-width: 900px; }

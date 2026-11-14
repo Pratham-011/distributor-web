@@ -394,7 +394,7 @@ function FileCard({ f, meta, busy, onChange, onRecheck, onUndo, onRemove, onDele
 function Summary({ f }) {
   const s = f.check?.stats || {};
   const totalsOk = f.check?.reconciliation?.length && f.check.reconciliation.every(r => r.status !== 'mismatch');
-  return <span>{num(s.rows)} rows{s.docs ? ` · ${num(s.docs)} bills` : ''}{s.taxable ? ` · Taxable ${inr(s.taxable)}` : ''}{s.amount ? ` · ${inr(s.amount)}` : ''}{s.balance ? ` · Balance ${inr(s.balance)}` : ''}{s.items ? ` · ${num(s.items)} items, ${num(s.stock_qty)} units` : ''}{s.stock_value ? ` · Stock value ${inr(s.stock_value)}` : ''}
+  return <span>{num(s.rows)} rows{s.docs ? ` · ${num(s.docs)} bills` : ''}{s.bills ? ` · ${num(s.bills)} settled bills` : ''}{s.taxable ? ` · Taxable ${inr(s.taxable)}` : ''}{s.amount ? ` · ${inr(s.amount)}` : ''}{s.balance ? ` · Balance ${inr(s.balance)}` : ''}{s.items ? ` · ${num(s.items)} items, ${num(s.stock_qty)} units` : ''}{s.stock_value ? ` · Stock value ${inr(s.stock_value)}` : ''}
     {totalsOk ? ' · ✓ totals match the file' : ''}{f.check?.issues?.filter(i => i.level === 'warning').length ? ` · ${f.check.issues.filter(i => i.level === 'warning').length} note(s)` : ''}</span>;
 }
 

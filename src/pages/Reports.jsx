@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import DateBar, { useDates } from '../components/DateBar.jsx';
+import DateBar, { useDates, SettleFilter, settleQ, STOCK_CHOICES, stockQ } from '../components/DateBar.jsx';
 import useReport from '../components/useReport.js';
 import DataTable from '../components/DataTable.jsx';
 import { Kpi, Card, Notice, Bars, Columns, Empty, ReportSkeleton, useTip, PrintHeader, printReport, Badge } from '../components/ui.jsx';
@@ -24,19 +24,21 @@ function Head({ title, sub, period }) {
     </>
   );
 }
-function Frame({ title, sub, name, children, hint }) {
+function Frame({ title, sub, name, children, hint, settle = true }) {
   const r = useReport(name);
-  const { range } = useDates();
+  const { range, settle: chosen } = useDates();
   return (
     <>
-      <Head title={title} sub={sub} period={range && rangeLabel(range.from, range.to)} />
-      <DateBar hint={hint} />
+      <Head title={title} sub={sub} period={range && rangeLabel(range.from, range.to) + (settle ? settledTag(chosen) : '')} />
+      <DateBar hint={hint} settle={settle} />
       {r.error && <Notice tone="bad">{r.error}</Notice>}
       {/* new dates: placeholder first, so old numbers are never shown under new dates */}
       {r.loading ? <ReportSkeleton /> : r.data && children(r.data)}
     </>
   );
 }
+// printed headings say which bills a page counts
+const settledTag = s => (s === 'settled' ? ' · Settled bills only' : s === 'unsettled' ? ' · Unsettled bills only' : '');
 function Nothing({ what, type }) {
   const { dates, setRange } = useDates();
   const last = type && dates?.latest?.[type];
@@ -89,9 +91,48 @@ export function Sales() {
                 { key: 'taxable', label: 'Sales', num: 1, render: money }, { key: 'tax', label: 'GST', num: 1, render: money }]} />
             </Card>
           </div>
+          <SettlementCheck />
         </>
       )}
     </Frame>
+  );
+}
+
+const CHECK = { match: ['Same amount', 'good'], differs: ['Amount differs', 'warn'], missing: ['Not in Sales Register', 'bad'] };
+/** Every bill in the Delivery Report Collection files loaded on the chosen dates, looked up in the Sales Register by bill number. */
+function SettlementCheck() {
+  const { range } = useDates();
+  const [s, setS] = useState(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    if (!range) return undefined;
+    let live = true;
+    setS(null);
+    api(`/reports/settlement/check?from=${range.from}&to=${range.to}`).then(d => live && setS(d)).catch(() => {});
+    return () => { live = false; };
+  }, [range?.from, range?.to]);
+  if (!s?.summary.bills) return null;
+  const { summary: m } = s;
+  const rows = all ? s.rows : s.rows.filter(r => r.status !== 'match');
+  return (
+    <Card title="Settlement files checked bill by bill" desc="Delivery Report Collection files loaded on these dates. Each bill number is looked up in your uploaded Sales Registers (any date) and its amount compared.">
+      <p style={{ margin: '0 0 10px' }}><b>{num(m.bills)}</b> bills: <Badge tone="good">{num(m.match)} same amount</Badge>{' '}
+        {m.differs > 0 && <Badge tone="warn">{num(m.differs)} amount differs</Badge>}{' '}
+        {m.missing > 0 && <Badge tone="bad">{num(m.missing)} not in the Sales Register</Badge>}</p>
+      {m.missing > 0 && <p className="small muted" style={{ marginTop: 0 }}>"Not in the Sales Register" usually means the Sales Register for that bill's date is not uploaded yet, or the bill number is written differently.</p>}
+      <div className="datebar no-print" role="group" aria-label="Show" style={{ marginBottom: 10 }}>
+        <button className={'chip' + (!all ? ' on' : '')} onClick={() => setAll(false)}>Only problems ({num(m.differs + m.missing)})</button>
+        <button className={'chip' + (all ? ' on' : '')} onClick={() => setAll(true)}>Every bill ({num(m.bills)})</button>
+      </div>
+      <DataTable stack="wide" fileName="Settlement check" rows={rows} empty="Every bill in these files is in the Sales Register with the same amount."
+        cols={[
+          { key: 'status', label: 'Check', render: v => <Badge tone={CHECK[v][1]}>{CHECK[v][0]}</Badge>, excel: r => CHECK[r.status][0] },
+          { key: 'bill_key', label: 'Bill', render: (v, r) => <>{v}<span className="sub">Load {r.load_no || '-'} · {date(r.settled_on)}</span></> },
+          { key: 'party_name', label: 'Party' },
+          { key: 'bill_amount', label: 'Settlement amount', num: 1, render: money },
+          { key: 'reg_value', label: 'Sales Register amount', num: 1, render: (v, r) => (r.reg_no ? <>{money(v)}<span className="sub">{date(r.reg_date)}</span></> : '—'), excel: r => r.reg_value },
+        ]} />
+    </Card>
   );
 }
 
@@ -186,7 +227,7 @@ export function Returns() {
 // ------------------------------------------------------------------ Purchases
 export function Purchases() {
   return (
-    <Frame title="Purchases" sub="Stock bought from the company" name="purchases">
+    <Frame title="Purchases" sub="Stock bought from the company" name="purchases" settle={false}>
       {d => !d.totals.lines ? nothing('purchases', 'purchase') : (
         <>
           <div className="kpis">
@@ -212,7 +253,7 @@ export function Purchases() {
 // ------------------------------------------------------------------ Collections
 export function Collections() {
   return (
-    <Frame title="Money received" sub="From the Receipt Book" name="collections">
+    <Frame title="Money received" sub="From the Receipt Book" name="collections" settle={false}>
       {d => !d.totals.n ? nothing('receipts', 'receipt') : (
         <>
           <div className="kpis">
@@ -404,15 +445,17 @@ const inOut = (a, b, note) => (v, i) => (
 
 export function Stock() {
   const [asOn, setAsOn] = useState('');
+  const { settle } = useDates();
+  const sq = stockQ(settle);
   const [s, setS] = useState({ loading: true });
   const [filter, setFilter] = useState('all');
   const [q, setQ] = useState('');
   useEffect(() => {
     let live = true;
     setS(x => ({ ...x, loading: true }));
-    api('/reports/stock' + (asOn ? `?as_on=${asOn}` : '')).then(data => live && setS({ data })).catch(e => live && setS({ error: e.message }));
+    api('/reports/stock?' + (asOn ? `as_on=${asOn}` : '') + sq).then(data => live && setS({ data })).catch(e => live && setS({ error: e.message }));
     return () => { live = false; };
-  }, [asOn]);
+  }, [asOn, sq]);
   const d = s.data;
   const L = d?.limits || {};
   const FILTERS = [['all', 'All items'], ['out', 'Out of stock'], ['low', `Low (under ${L.low} days)`], ['excess', `Too much (over ${L.excess} days)`],
@@ -422,7 +465,8 @@ export function Stock() {
     && words.every(w => `${i.name} ${i.code} ${i.brand}`.toLowerCase().includes(w)));
   return (
     <>
-      <Head title="Stock" sub="Counted from your uploaded Purchase, Sales, Credit Note and Debit Note files" period={d?.as_on && `Stock as on ${date(d.as_on)}`} />
+      <Head title="Stock" sub="Counted from your uploaded Purchase, Sales, Credit Note and Debit Note files" period={d?.as_on && `Stock as on ${date(d.as_on)}${sq ? ' · Settled bills only' : ''}`} />
+      <SettleFilter summary={false} choices={STOCK_CHOICES} note="Settled only: stock goes out only for settled bills (and comes back only for their credit notes); purchases always count." />
       {s.error && <Notice tone="bad">{s.error}</Notice>}
       {s.loading && !d ? <ReportSkeleton /> : !d?.as_on ? (
         <Card><Empty title="No purchases or sales uploaded yet">
@@ -509,7 +553,7 @@ function StockMovement() {
   const r = useReport('stock/movement');
   return (
     <Card title="Stock movement" desc="What came in and went out for the chosen dates, from your Purchase, Sales, Credit Note and Debit Note registers." className="stock-move">
-      <DateBar />
+      <DateBar settle={false} />
       {r.loading ? [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />) : r.error ? <Notice tone="bad">{r.error}</Notice> : (
         <DataTable stack="wide" fileName="Stock movement" rows={r.data.items} empty="No purchases or sales for these dates."
           cols={[
@@ -529,15 +573,17 @@ function StockMovement() {
 // ------------------------------------------------------------------ Outstanding
 export function Outstanding() {
   const [asOn, setAsOn] = useState('');
+  const { settle } = useDates();
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     setState(s => ({ ...s, loading: true }));
-    api('/reports/outstanding' + (asOn ? `?as_on=${asOn}` : '')).then(data => setState({ data })).catch(e => setState({ error: e.message }));
-  }, [asOn]);
+    api('/reports/outstanding?' + (asOn ? `as_on=${asOn}` : '') + settleQ(settle)).then(data => setState({ data })).catch(e => setState({ error: e.message }));
+  }, [asOn, settle]);
   const d = state.data;
   return (
     <>
-      <Head title="Money to collect" sub="From the Outstanding Debtors statement" period={d?.as_on && `Statement as on ${date(asOn || d.as_on)}`} />
+      <Head title="Money to collect" sub="From the Outstanding Debtors statement" period={d?.as_on && `Statement as on ${date(asOn || d.as_on)}${settledTag(settle)}`} />
+      <SettleFilter summary={false} />
       {state.error && <Notice tone="bad">{state.error}</Notice>}
       {state.loading && !d ? <ReportSkeleton /> : !d?.summary ? nothing('outstanding statement') : (
         <>
@@ -591,14 +637,15 @@ const AGE_TONE = w => (w <= 4 ? 'good' : w <= 8 ? 'warn' : 'bad');
 
 /** Every unpaid bill of one salesman (opens under the Salesman-wise row). */
 function SalesmanBills({ name, asOn }) {
+  const { settle } = useDates();
   const [s, setS] = useState({ loading: true });
   const [q, setQ] = useState('');
   useEffect(() => {
     let live = true;
-    api(`/reports/outstanding/salesman?as_on=${asOn}&name=${encodeURIComponent(name ?? '')}`)
+    api(`/reports/outstanding/salesman?as_on=${asOn}&name=${encodeURIComponent(name ?? '')}${settleQ(settle)}`)
       .then(d => live && setS({ bills: d.bills })).catch(e => live && setS({ error: e.message }));
     return () => { live = false; };
-  }, [name, asOn]);
+  }, [name, asOn, settle]);
   if (s.loading) return [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />);
   if (s.error) return <Notice tone="bad">{s.error}</Notice>;
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -632,13 +679,14 @@ const LEDGER_TYPE = { purchase: ['Purchase', 'info'], credit_note: ['Return from
 
 /** Every purchase, sale and return of one item, newest first, with the stock after each (opens under the item row). */
 function ItemLedger({ code, asOn }) {
+  const { settle } = useDates();
   const [s, setS] = useState({ loading: true });
   useEffect(() => {
     let live = true;
-    api(`/reports/stock/item?as_on=${asOn}&code=${encodeURIComponent(code)}`)
+    api(`/reports/stock/item?as_on=${asOn}&code=${encodeURIComponent(code)}${stockQ(settle)}`)
       .then(d => live && setS({ data: d })).catch(e => live && setS({ error: e.message }));
     return () => { live = false; };
-  }, [code, asOn]);
+  }, [code, asOn, settle]);
   if (s.loading) return [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />);
   if (s.error) return <Notice tone="bad">{s.error}</Notice>;
   const d = s.data;
@@ -663,13 +711,14 @@ function ItemLedger({ code, asOn }) {
 }
 
 function PartySearch({ asOn }) {
+  const { settle } = useDates();
   const [q, setQ] = useState('');
   const dq = useDebounced(q, 350);
   const [res, setRes] = useState(null);
   useEffect(() => {
     if (dq.trim().length < 2) { setRes(null); return; }
-    api(`/reports/outstanding/search?as_on=${asOn}&q=${encodeURIComponent(dq.trim())}`).then(setRes).catch(() => setRes({ bills: [] }));
-  }, [dq, asOn]);
+    api(`/reports/outstanding/search?as_on=${asOn}&q=${encodeURIComponent(dq.trim())}${settleQ(settle)}`).then(setRes).catch(() => setRes({ bills: [] }));
+  }, [dq, asOn, settle]);
   const total = res?.bills.reduce((a, b) => a + Math.round(Number(b.balance) * 100), 0) / 100;
   return (
     <Card className="no-print" title="Find a party" desc="Type a shop name, party code or bill number">
