@@ -197,6 +197,7 @@ function OrgPanel({ org, orgs, settings, today, onChange }) {
               <button className="btn danger">Pause portal</button>
             </form>
           )}
+          <SignOutAll org={org} act={act} />
           <DeleteBusiness org={org} linked={d?.linked || []} onDone={onChange} />
         </section>
       </div>
@@ -453,6 +454,24 @@ function Pricing() {
       </form>
       <p className="small muted" style={{ marginBottom: 0 }}>These amounts are filled in for you when you add extra users or link a company, and you can still change them each time. A business cannot add people beyond its places until you add them here.</p>
     </Card>
+  );
+}
+
+// ------------------------------------------------------------------ signing a whole business out
+/** Signs every person of the business out of every device. They can log in again unless the portal is paused. */
+function SignOutAll({ org, act }) {
+  const { user } = useAuth();
+  if (org.id === user.org_id) return null;     // that would sign the admin out too
+  const go = () => window.confirm(`Sign everyone in ${org.name} out of their devices?\n\nThey can log in again straight away. To keep them out, pause the portal.`)
+    && act(() => api(`/platform/orgs/${org.id}/signout-all`, { method: 'POST' }),
+      r => (r.people ? `Signed out ${r.people} ${r.people === 1 ? 'person' : 'people'} (${r.sessions} sign-in${r.sessions === 1 ? '' : 's'}).` : 'Nobody was signed in.'));
+  return (
+    <div className="form-row" style={{ marginTop: 10 }}>
+      <p className="small" style={{ margin: 0, flex: '1 1 240px' }}>
+        {org.online ? <><b>{org.online}</b> {org.online === 1 ? 'person is' : 'people are'} online now.</> : 'Nobody is online now.'} Sign everyone out of their devices, for example after a phone is lost.
+      </p>
+      <button type="button" className="btn" onClick={go}>Sign everyone out</button>
+    </div>
   );
 }
 

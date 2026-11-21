@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useDates, settleQ, stockQ } from './DateBar.jsx';
 
-// the reports that can be split into settled / unsettled bills (purchases, receipts and stock are not)
-const SPLIT = ['overview', 'sales', 'gst', 'returns'];
+// the reports that can be split into settled / unsettled bills (purchases are not; stock has its own rule)
+const SPLIT = ['overview', 'sales', 'gst', 'returns', 'collections', 'collections/receipts'];
 
 /** Loads /reports/<name> for the current date range. */
 export default function useReport(name, extra = '') {

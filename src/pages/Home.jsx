@@ -7,7 +7,7 @@ import { useAuth, can } from '../auth.jsx';
 import { short, inr, num, pct, date, dateShort, rupees } from '../format.js';
 
 export const AGE_SHADES = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
-const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['receipt', 'Receipts'], ['outstanding', 'Outstanding'], ['stock', 'Stock'], ['delivery', 'Settled bills']];
+const TYPES = [['sales', 'Sales'], ['purchase', 'Purchase'], ['credit_note', 'Credit notes'], ['debit_note', 'Debit notes'], ['collection', 'Collections'], ['outstanding', 'Outstanding'], ['stock', 'Stock'], ['delivery', 'Settled bills']];
 
 export default function Home() {
   const { user } = useAuth();
@@ -26,7 +26,7 @@ export default function Home() {
           {can(user, 'writer') ? <Link className="btn primary" to="/upload">Upload files</Link> : <p className="muted">Ask an Uploader or the Owner to upload files.</p>}</div></Card>
       ) : (
         <>
-          <DateBar settleNote="Receipts and purchases are not split." />
+          <DateBar settleNote="Purchases are not split." />
           {range && dates && <UploadedFor range={range} dates={dates} />}
           {error && <Notice tone="bad">{error}</Notice>}
           {loading ? <ReportSkeleton /> : d && <Body d={d} />}
@@ -59,7 +59,7 @@ function Body({ d }) {
     <>
       <div className="kpis">
         <Kpi tone="blue" label="Sales (before GST)" value={short(S.taxable)} sub={`${num(S.docs)} bills · ${num(S.parties)} shops`} title={inr(S.taxable)} />
-        <Kpi tone="blue" label="Money received" value={short(R.total)} sub={R.n ? `${num(R.n)} receipts · Cash ${short(R.cash)}` : 'No receipts uploaded for these dates'} title={inr(R.total)} />
+        <Kpi tone="blue" label="Money received" value={short(R.total)} sub={R.n ? `${num(R.n)} payments · Cash ${short(R.cash)}` : 'No collections uploaded for these dates'} title={inr(R.total)} />
         <Kpi tone="blue" label="Money to collect" value={O ? short(O.total) : '–'} sub={O ? `As on ${date(O.as_on)} · ${num(O.parties)} parties` : 'No outstanding file yet'} title={O ? inr(O.total) : ''} />
         <Kpi tone="blue" label="Pending over 8 weeks" value={O ? short(O.over_8) : '–'} sub={O ? `${num(O.over_8_parties)} parties` : ''} title={O ? inr(O.over_8) : ''} />
       </div>

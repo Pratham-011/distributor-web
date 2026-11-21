@@ -250,44 +250,99 @@ export function Purchases() {
   );
 }
 
-// ------------------------------------------------------------------ Collections
+// ------------------------------------------------------------------ Money received
+// From the Daily Sales Collection Report (by bill number and salesman) plus the cash and cheques taken at delivery
+// (Delivery Report Collection). "Left to collect" = settled bills still not fully paid.
+const MODE_NAME = { Cash: 'Cash', Cheque: 'Cheque', Online: 'RTGS' };
 export function Collections() {
   return (
-    <Frame title="Money received" sub="From the Receipt Book" name="collections" settle={false}>
-      {d => !d.totals.n ? nothing('receipts', 'receipt') : (
+    <Frame title="Money received" sub="Cash, cheques and RTGS from the Daily Sales Collection Report, plus the cash taken at delivery" name="collections">
+      {d => !d.totals.n && !d.left?.bills ? (
+        <Card><Empty title="No money received for these dates">
+          <p>{d.has_files ? `The latest Daily Sales Collection Report uploaded is for ${date(d.latest)}.` : 'Upload the Daily Sales Collection Report (and the Delivery Report Collection for cash at delivery) on the Upload files page.'}</p>
+        </Empty></Card>
+      ) : (
         <>
           <div className="kpis">
-            <Kpi tone="blue" label="Total received" value={inr(d.totals.total)} sub={`${num(d.totals.n)} receipts`} />
-            {d.modes.map(m => <Kpi key={m.name} label={m.name} value={rupees(m.amount)} sub={`${num(m.n)} receipts · ${pct(m.amount, d.totals.total)}`} />)}
+            <Kpi tone="blue" label="Total received" value={rupees(d.totals.total)} sub={`${num(d.totals.bills)} bills · ${num(d.totals.n)} payments`} title={inr(d.totals.total)} />
+            {['Cash', 'Cheque', 'Online'].map(k => {
+              const m = d.modes.find(x => x.name === k);
+              return <Kpi key={k} label={MODE_NAME[k]} value={rupees(m?.amount || 0)} sub={m ? `${num(m.n)} payments · ${pct(m.amount, d.totals.total)}` : 'none'} />;
+            })}
+            {d.left && <Kpi label="Left to collect (settled bills)" value={rupees(d.left.total)} sub={`${num(d.left.bills)} bills, as on ${date(d.left.as_on)}`} title={inr(d.left.total)} />}
           </div>
-          <SplitList title="Collected by" desc={<>“Office counter” means paid at the office.<span className="no-print"> Click a name to see each receipt.</span></>} by="person"
-            rows={d.people} fileName="Collected by" />
-          <SplitList title="Shops that paid the most" desc={<span className="no-print">Click a shop to see each receipt.</span>} by="party" rows={d.parties} fileName="Shops that paid" />
+          {!d.has_files && <Notice tone="warn">No Daily Sales Collection Report uploaded yet: only the cash taken at delivery is counted.</Notice>}
+          <SplitList title="Received by salesman" desc={<>“At delivery” is the cash taken when the goods were delivered (Delivery Report Collection). Cheques and RTGS come only from the Daily Sales Collection Report: a cheque taken at delivery is counted once it is entered there. An empty cheque number in that report is cash.<span className="no-print"> Click a name to see each payment.</span></>}
+            by="person" rows={d.people} fileName="Received by salesman" />
+          {d.left && <LeftToCollect left={d.left} />}
+          <SplitList title="Shops that paid the most" desc={<span className="no-print">Click a shop to see each payment.</span>} by="party" rows={d.parties} fileName="Shops that paid" />
           <AllReceipts />
-          <Card title="Where the money went">
-            <DataTable fileName="Accounts" rows={d.accounts} cols={[{ key: 'name', label: 'Account' }, { key: 'n', label: 'Receipts', num: 1 }, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
-          </Card>
         </>
       )}
     </Frame>
   );
 }
 
-// Cash / Cheque / Online: the same three colours everywhere (categorical slots 1–3, checked for colour blindness)
-const MODES = [['cash', 'Cash'], ['cheque', 'Cheque'], ['online', 'Online']];
+/** Settled bills still not fully paid, by salesman; a row opens its bills. */
+function LeftToCollect({ left }) {
+  return (
+    <Card title="Left to collect" desc={`Settled bills delivered up to ${date(left.as_on)}: bill amount minus the cash taken at delivery, minus what was paid since (cheques, RTGS, cash, discount and returns). A cheque taken at delivery counts as paid, and is not counted again when it is entered in the Daily Sales Collection Report. It is only complete when every Daily Sales Collection Report since delivery is uploaded.`}>
+      <DataTable stack="wide" fileName="Left to collect" rows={left.by_salesman} rowKey={r => r.name} empty="Every settled bill is fully paid."
+        expand={r => <LeftBills name={r.name} />}
+        footer={{ name: 'Total', bills: left.by_salesman.reduce((a, r) => a + r.bills, 0), left: left.total }}
+        cols={[
+          { key: 'name', label: 'Salesman' },
+          { key: 'bills', label: 'Bills', num: 1 },
+          { key: 'bill_amount', label: 'Bill amount', num: 1, render: money },
+          { key: 'received', label: 'Received so far', num: 1, render: money },
+          { key: 'left', label: 'Left to collect', num: 1, render: v => <b>{money(v)}</b> },
+        ]} />
+    </Card>
+  );
+}
+
+function LeftBills({ name }) {
+  const { range, settle } = useDates();
+  const [s, setS] = useState({ loading: true });
+  useEffect(() => {
+    let live = true;
+    api(`/reports/collections/left?from=${range.from}&to=${range.to}&salesman=${encodeURIComponent(name)}${settleQ(settle)}`)
+      .then(d => live && setS({ data: d })).catch(e => live && setS({ error: e.message }));
+    return () => { live = false; };
+  }, [name, range.from, range.to, settle]);
+  if (s.loading) return [80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />);
+  if (s.error) return <Notice tone="bad">{s.error}</Notice>;
+  const { bills, statement_as_on: st } = s.data;
+  return (
+    <DataTable stack="wide" scroll={false} fileName={`Left to collect ${name}`} rows={bills}
+      cols={[
+        { key: 'bill_key', label: 'Bill', render: (v, b) => <>{v}<span className="sub">delivered {date(b.settled_on)} · {b.days} day{b.days === 1 ? '' : 's'} ago</span></> },
+        { key: 'party_name', label: 'Party' },
+        { key: 'bill_amount', label: 'Bill amount', num: 1, render: money },
+        { key: 'cash', label: 'Cash at delivery', num: 1, render: v => (Number(v) ? money(v) : '—') },
+        { key: 'paid', label: 'Paid since (cheques, RTGS, cash)', num: 1, render: (v, b) => (Number(v) ? <>{money(v)}{b.last_paid && <span className="sub">last {date(b.last_paid)}</span>}</> : '—') },
+        { key: 'left_amt', label: 'Left', num: 1, render: v => <b>{money(v)}</b> },
+        ...(st ? [{ key: 'statement_balance', label: `Outstanding statement (${date(st)})`, num: 1,
+          render: (v, b) => (v == null ? <span className="muted">not in it</span> : Math.abs(Number(v) - Number(b.left_amt)) < 1 ? money(v) : <span title="Different from the amount worked out here">{money(v)} ⚠</span>) }] : []),
+      ]} />
+  );
+}
+
+// Cash / Cheque / RTGS: the same three colours everywhere (categorical slots 1–3, checked for colour blindness)
+const MODES = [['cash', 'Cash'], ['cheque', 'Cheque'], ['online', 'RTGS']];
 const ModeKey = () => (
   <span className="mode-key" aria-hidden="true">{MODES.map(([k, l]) => <span key={k}><i className={'sw m-' + k} />{l}</span>)}</span>
 );
 
-/** Who collected (or which shop paid) how much, split into Cash / Cheque / Online. A row opens its receipts. */
+/** Who collected (or which shop paid) how much, split into Cash / Cheque / RTGS. A row opens its payments. */
 function SplitList({ title, desc, by, rows, fileName }) {
   const [open, setOpen] = useState(null);
   const [tip, bind] = useTip();
   const sum = k => rows.reduce((a, r) => a + Math.round(Number(r[k]) * 100), 0) / 100;
   async function exportExcel() {
     const XLSX = await import('xlsx');
-    const data = rows.map(r => ({ [by === 'person' ? 'Collected by' : 'Shop']: r.name, Receipts: r.n,
-      Cash: Number(r.cash), Cheque: Number(r.cheque), Online: Number(r.online), Total: Number(r.amount) }));
+    const data = rows.map(r => ({ [by === 'person' ? 'Salesman' : 'Shop']: r.name, Payments: r.n,
+      Cash: Number(r.cash), Cheque: Number(r.cheque), RTGS: Number(r.online), Total: Number(r.amount) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Report');
     XLSX.writeFile(wb, fileName + '.xlsx');
@@ -297,7 +352,7 @@ function SplitList({ title, desc, by, rows, fileName }) {
     <Card title={title} desc={desc} actions={<ModeKey />}>
       <div className="split scroll" {...(rows.length > 8 ? { tabIndex: 0, role: 'region', 'aria-label': `${title}, scrolls` } : {})}>
         <div className="split-head" aria-hidden="true">
-          <span>{by === 'person' ? 'Name' : 'Shop'}</span>{MODES.map(([k, l]) => <span key={k} className="m-col">{l}</span>)}<span className="m-col">Total</span><span />
+          <span>{by === 'person' ? 'Salesman' : 'Shop'}</span>{MODES.map(([k, l]) => <span key={k} className="m-col">{l}</span>)}<span className="m-col">Total</span><span />
         </div>
         {rows.map(r => {
           const isOpen = open === r.key;
@@ -306,11 +361,11 @@ function SplitList({ title, desc, by, rows, fileName }) {
               <button className="split-row" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : r.key)}>
                 <span className="split-name">
                   <b>{r.name || 'Not given'}</b>
-                  <span className="sub">{num(r.n)} receipt{r.n === 1 ? '' : 's'}{r.city ? ` · ${titleCase(r.city)}` : ''}</span>
+                  <span className="sub">{num(r.n)} payment{r.n === 1 ? '' : 's'}{r.code ? ` · ${r.code}` : ''}</span>
                   <span className="split-bar">
                     {MODES.filter(([k]) => Number(r[k]) > 0).map(([k, l]) => (
                       <span key={k} className={'seg m-' + k} style={{ flexGrow: Number(r[k]) }}
-                        {...bind(`${r.name} · ${l}: ${inr(r[k])} (${r[k + '_n']} receipt${r[k + '_n'] === 1 ? '' : 's'}, ${pct(r[k], r.amount)})`)} />
+                        {...bind(`${r.name} · ${l}: ${inr(r[k])} (${r[k + '_n']} payment${r[k + '_n'] === 1 ? '' : 's'}, ${pct(r[k], r.amount)})`)} />
                     ))}
                   </span>
                 </span>
@@ -327,7 +382,7 @@ function SplitList({ title, desc, by, rows, fileName }) {
           );
         })}
         <div className="split-row split-foot">
-          <span className="split-name"><b>Total</b><span className="sub">{num(rows.reduce((a, r) => a + r.n, 0))} receipts</span></span>
+          <span className="split-name"><b>Total</b><span className="sub">{num(rows.reduce((a, r) => a + r.n, 0))} payments</span></span>
           {MODES.map(([k, l]) => <span key={k} className={'split-amt a-' + k} data-label={l}>{inr(sum(k))}</span>)}
           <span className="split-amt a-total" data-label="Total"><b>{inr(sum('amount'))}</b></span>
           <span />
@@ -335,28 +390,28 @@ function SplitList({ title, desc, by, rows, fileName }) {
       </div>
       <div className="table-tools no-print" style={{ marginTop: 10 }}>
         <button className="btn small" onClick={exportExcel}>{Icon.download} Download Excel</button>
-        {rows.length > 8 && <span className="small muted">{num(rows.length)} {by === 'person' ? 'people' : 'shops'} · scroll to see all, click one to open</span>}
+        {rows.length > 8 && <span className="small muted">{num(rows.length)} {by === 'person' ? 'salesmen' : 'shops'} · scroll to see all, click one to open</span>}
       </div>
       {tip}
     </Card>
   );
 }
 
-/** Every receipt behind one person or shop, grouped by Cash / Cheque / Online. */
+/** Every payment behind one salesman or shop, grouped by Cash / Cheque / RTGS. */
 function SplitDetail({ by, k, name }) {
-  const { range } = useDates();
+  const { range, settle } = useDates();
   const [s, setS] = useState({ loading: true });
   useEffect(() => {
     let live = true;
-    api(`/reports/collections/receipts?from=${range.from}&to=${range.to}&by=${by}&key=${encodeURIComponent(k ?? '')}`)
+    api(`/reports/collections/receipts?from=${range.from}&to=${range.to}&by=${by}&key=${encodeURIComponent(k ?? '')}${settleQ(settle)}`)
       .then(d => live && setS({ list: d.receipts })).catch(e => live && setS({ error: e.message }));
     return () => { live = false; };
-  }, [by, k, range.from, range.to]);
+  }, [by, k, range.from, range.to, settle]);
   if (s.loading) return <div className="split-detail">{[80, 64, 72].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />)}</div>;
   if (s.error) return <div className="split-detail"><Notice tone="bad">{s.error}</Notice></div>;
   const other = by === 'person'
     ? { key: 'party_name', label: 'Shop' }
-    : { key: 'collected_by', label: 'Collected by' };
+    : { key: 'collected_by', label: 'Salesman' };
   return (
     <div className="split-detail">
       {MODES.map(([mk, label]) => {
@@ -365,13 +420,12 @@ function SplitDetail({ by, k, name }) {
         const total = list.reduce((a, x) => a + Math.round(Number(x.amount) * 100), 0) / 100;
         const details = mk === 'cheque'
           ? [{ key: 'bank', label: 'Bank', render: titleCase }, { key: 'cheque_no', label: 'Cheque no.' }, { key: 'cheque_date', label: 'Cheque date', render: date }]
-          : mk === 'online' ? [{ key: 'cheque_no', label: 'Reference' }, { key: 'bank', label: 'Bank', render: titleCase }]
-            : [{ key: 'account', label: 'Account' }];
+          : mk === 'online' ? [{ key: 'cheque_no', label: 'Reference' }, { key: 'cheque_date', label: 'Date', render: date }] : [];
         return (
           <div key={mk} className="mode-group">
-            <h4><i className={'sw m-' + mk} />{label}<span className="muted"> · {num(list.length)} receipt{list.length === 1 ? '' : 's'} · </span>{inr(total)}</h4>
+            <h4><i className={'sw m-' + mk} />{label}<span className="muted"> · {num(list.length)} payment{list.length === 1 ? '' : 's'} · </span>{inr(total)}</h4>
             <DataTable stack scroll={false} fileName={`${name} ${label}`} rows={list} exportable={false}
-              cols={[{ key: 'v_no', label: 'Receipt', render: (v, x) => <>{v}<span className="sub">{date(x.date)}</span></> }, other,
+              cols={[{ key: 'bill_no', label: 'Bill', render: (v, x) => <>{v}<span className="sub">{x.v_no} · {date(x.date)}</span></> }, other,
                 ...details, { key: 'amount', label: 'Amount', num: 1, render: money }]} />
           </div>
         );
@@ -380,7 +434,7 @@ function SplitDetail({ by, k, name }) {
   );
 }
 
-/** Every receipt for the chosen dates: party, salesman, mode, cheque / reference. Filter by mode or salesman, or search. */
+/** Every payment for the chosen dates: bill, party, salesman, mode, cheque / reference. Filter by mode or salesman, or search. */
 function AllReceipts() {
   const r = useReport('collections/receipts');
   const [mode, setMode] = useState('');
@@ -389,17 +443,17 @@ function AllReceipts() {
   const list = r.data?.receipts || [];
   const people = [...new Set(list.map(x => x.collected_by).filter(Boolean))].sort();
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = list.filter(x => (!mode || x.mode === mode) && (!person || x.collected_by === person)
-    && words.every(w => `${x.party_name} ${x.party_code} ${x.city} ${x.v_no} ${x.cheque_no} ${x.bank}`.toLowerCase().includes(w)));
+  const shown = list.filter(x => (!mode || x.mode.toLowerCase() === mode) && (!person || x.collected_by === person)
+    && words.every(w => `${x.party_name} ${x.party_code} ${x.bill_no} ${x.v_no} ${x.cheque_no} ${x.bank}`.toLowerCase().includes(w)));
   const total = shown.reduce((a, x) => a + Math.round(Number(x.amount) * 100), 0) / 100;
   return (
-    <Card title="All receipts" desc="Every receipt with the party, the salesman who collected it and how it was paid.">
+    <Card title="Every payment" desc="Each bill paid on these dates, with the salesman who collected it and how it was paid.">
       {r.loading ? [70, 90, 60].map((w, i) => <span key={i} className="sk sk-row" style={{ width: w + '%' }} />) : r.error ? <Notice tone="bad">{r.error}</Notice> : (
         <>
           <div className="form-row no-print" style={{ marginBottom: 12 }}>
             <div className="datebar" role="group" aria-label="Payment mode" style={{ flex: 'none' }}>
-              {[['', 'All'], ...MODES.map(([k, l]) => [l, l])].map(([v, l]) => (
-                <button key={l} className={'chip' + (mode === v ? ' on' : '')} onClick={() => setMode(v)}>{v && <i className={'sw m-' + v.toLowerCase()} />}{l}</button>
+              {[['', 'All'], ...MODES].map(([k, l]) => (
+                <button key={l} className={'chip' + (mode === k ? ' on' : '')} onClick={() => setMode(k)}>{k && <i className={'sw m-' + k} />}{l}</button>
               ))}
             </div>
             <label className="field"><span>Salesman</span>
@@ -407,20 +461,18 @@ function AllReceipts() {
                 <option value="">Everyone</option>{people.map(p => <option key={p} value={p}>{p}</option>)}
               </select></label>
             <label className="field search-field"><span>Search</span>
-              <input type="search" placeholder="Party, code, city, receipt or cheque no." value={q} onChange={e => setQ(e.target.value)} /></label>
+              <input type="search" placeholder="Party, bill, receipt or cheque no." value={q} onChange={e => setQ(e.target.value)} /></label>
           </div>
-          <p className="small muted" style={{ margin: '0 0 8px' }}>{num(shown.length)} of {num(list.length)} receipts · total <b style={{ color: 'var(--text)' }}>{inr(total)}</b></p>
-          <DataTable stack="wide" fileName="All receipts" rows={shown} empty="No receipts match." footer={{ date: 'Total', amount: total }}
+          <p className="small muted" style={{ margin: '0 0 8px' }}>{num(shown.length)} of {num(list.length)} payments · total <b style={{ color: 'var(--text)' }}>{inr(total)}</b></p>
+          <DataTable stack="wide" fileName="Every payment" rows={shown} empty="No payments match." footer={{ date: 'Total', amount: total }}
             cols={[
               { key: 'date', label: 'Date', render: v => <span className="nowrap">{date(v)}</span>, excel: x => date(x.date) },
-              { key: 'v_no', label: 'Receipt no.', render: v => <span className="nowrap">{v}</span> },
-              { key: 'party_name', label: 'Party', render: (v, x) => <>{v}{x.city && <span className="sub">{titleCase(x.city)}</span>}</>,
-                excel: x => x.city ? `${x.party_name}, ${titleCase(x.city)}` : x.party_name },
-              { key: 'party_code', label: 'Party code', render: v => v || '—' },
+              { key: 'bill_no', label: 'Bill', render: (v, x) => <span className="nowrap">{v}<span className="sub">{x.v_no}</span></span> },
+              { key: 'party_name', label: 'Party', render: (v, x) => <>{v}{x.party_code && <span className="sub">{x.party_code}</span>}</> },
               { key: 'collected_by', label: 'Salesman', render: v => v || '—' },
-              { key: 'mode', label: 'Mode', render: v => <span className="nowrap"><i className={'sw m-' + String(v).toLowerCase()} />{v}</span> },
-              { key: 'cheque_no', label: 'Cheque / reference', render: (v, x) => v ? <>{v}<span className="sub">{[titleCase(x.bank), x.cheque_date && date(x.cheque_date)].filter(Boolean).join(' · ')}</span></> : <span className="muted">{x.account || '—'}</span>,
-                excel: x => [x.cheque_no, x.bank, x.cheque_date].filter(Boolean).join(' / ') || x.account },
+              { key: 'mode', label: 'Mode', render: v => <span className="nowrap"><i className={'sw m-' + String(v).toLowerCase()} />{MODE_NAME[v] || v}</span>, excel: x => MODE_NAME[x.mode] || x.mode },
+              { key: 'cheque_no', label: 'Cheque / reference', render: (v, x) => v ? <>{v}<span className="sub">{[titleCase(x.bank), x.cheque_date && date(x.cheque_date)].filter(Boolean).join(' · ')}</span></> : <span className="muted">—</span>,
+                excel: x => [x.cheque_no, x.bank, x.cheque_date].filter(Boolean).join(' / ') },
               { key: 'amount', label: 'Amount', num: 1, render: money },
             ]} />
         </>
